@@ -51,8 +51,9 @@ namespace Internal.IL
             try
             {
                 string mangledName;
-                // TODO: We should use the startup node to generate StartupCodeMain and avoid special casing here
-                if (methodCodeNodeNeedingCode.Method.Signature.IsStatic && methodCodeNodeNeedingCode.Method.Name == "Main")
+
+                // TODO: Better detection of the StartupCodeMain method
+                if (methodCodeNodeNeedingCode.Method.Signature.IsStatic && methodCodeNodeNeedingCode.Method.Name == "StartupCodeMain")
                 {
                     mangledName = "StartupCodeMain";
                 }
@@ -96,6 +97,17 @@ namespace Internal.IL
                 //methodCodeNodeNeedingCode.SetCode(sb.ToString(), Array.Empty<Object>());
             }
 
+            // Uncomment the block below to get specific method failures when LLVM fails for cryptic reasons
+#if false
+            LLVMBool result = LLVM.VerifyFunction(ilImporter._llvmFunction, LLVMVerifierFailureAction.LLVMPrintMessageAction);
+            if (result.Value != 0)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"Error compliling {method.OwningType}.{method}");
+                Console.ResetColor();
+            }
+#endif // false
+
             // Ensure dependencies show up regardless of exceptions to avoid breaking LLVM
             methodCodeNodeNeedingCode.SetDependencies(ilImporter.GetDependencies());
         }
@@ -103,6 +115,7 @@ namespace Internal.IL
         static LLVMValueRef DebugtrapFunction = default(LLVMValueRef);
         static LLVMValueRef TrapFunction = default(LLVMValueRef);
         static LLVMValueRef DoNothingFunction = default(LLVMValueRef);
+        static LLVMValueRef NullRefFunction = default(LLVMValueRef);
 
         private static IEnumerable<string> GetParameterNamesForMethod(MethodDesc method)
         {

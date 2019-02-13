@@ -66,9 +66,9 @@ namespace ILCompiler.DependencyAnalysis
                 }
 
                 node.EncodeData(ref builder, factory, relocsOnly);
-                if (node is ISymbolDefinitionNode)
+                if (node is ISymbolDefinitionNode symbolDef)
                 {
-                    builder.AddSymbol((ISymbolDefinitionNode)node);
+                    builder.AddSymbol(symbolDef);
                 }
             }
         }
@@ -108,6 +108,6 @@ namespace ILCompiler.DependencyAnalysis
 
         protected internal override int Phase => (int)ObjectNodePhase.Ordered;
 
-        protected internal override int ClassCode => (int)ObjectNodeOrder.ArrayOfEmbeddedDataNode;
+        public override int ClassCode => (int)ObjectNodeOrder.ArrayOfEmbeddedDataNode;
     }
 }

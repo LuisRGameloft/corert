@@ -206,7 +206,12 @@ namespace System.Threading
             {
                 if (handleValue != IntPtr.Zero && handleValue != (IntPtr)(-1))
                 {
-                    EventWaitHandle.Set(handleValue);
+                    Debug.Assert(handleValue == handle.DangerousGetHandle());
+#if PLATFORM_WINDOWS
+                    Interop.Kernel32.SetEvent(handle);
+#else
+                    WaitSubsystem.SetEvent(handleValue);
+#endif
                 }
             }
             finally

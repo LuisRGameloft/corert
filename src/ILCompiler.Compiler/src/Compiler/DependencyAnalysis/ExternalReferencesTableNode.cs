@@ -97,20 +97,23 @@ namespace ILCompiler.DependencyAnalysis
 
             foreach (SymbolAndDelta symbolAndDelta in _insertedSymbols)
             {
-                if (factory.Target.Abi == TargetAbi.CoreRT)
+                if (factory.Target.Abi == TargetAbi.ProjectN)
                 {
-                    // TODO: set low bit if the linkage of the symbol is IAT_PVALUE.
-                    builder.EmitReloc(symbolAndDelta.Symbol, RelocType.IMAGE_REL_BASED_RELPTR32, symbolAndDelta.Delta);
-                }
-                else
-                {
-                    Debug.Assert(factory.Target.Abi == TargetAbi.ProjectN);
                     int delta = symbolAndDelta.Delta;
                     if (symbolAndDelta.Symbol.RepresentsIndirectionCell)
                     {
                         delta = (int)((uint)delta | IndirectionConstants.RVAPointsToIndirection);
                     }
                     builder.EmitReloc(symbolAndDelta.Symbol, RelocType.IMAGE_REL_BASED_ADDR32NB, delta);
+                }
+                else if (factory.Target.SupportsRelativePointers)
+                {
+                    // TODO: set low bit if the linkage of the symbol is IAT_PVALUE.
+                    builder.EmitReloc(symbolAndDelta.Symbol, RelocType.IMAGE_REL_BASED_RELPTR32, symbolAndDelta.Delta);
+                }
+                else
+                {
+                    builder.EmitPointerReloc(symbolAndDelta.Symbol, symbolAndDelta.Delta);
                 }
             }
 
@@ -123,9 +126,8 @@ namespace ILCompiler.DependencyAnalysis
         }
 
         protected internal override int Phase => (int)ObjectNodePhase.Ordered;
-        protected internal override int ClassCode => (int)ObjectNodeOrder.ExternalReferencesTableNode;
-
-        protected internal override int CompareToImpl(SortableDependencyNode other, CompilerComparer comparer)
+        public override int ClassCode => (int)ObjectNodeOrder.ExternalReferencesTableNode;
+        public override int CompareToImpl(ISortableNode other, CompilerComparer comparer)
         {
             return string.Compare(_blobName, ((ExternalReferencesTableNode)other)._blobName);
         }

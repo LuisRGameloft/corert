@@ -19,6 +19,7 @@ namespace Internal.IL
     partial class ILImporter
     {
         private readonly MethodIL _methodIL;
+        private readonly MethodIL _canonMethodIL;
         private readonly ILScanner _compilation;
         private readonly ILScanNodeFactory _factory;
 
@@ -83,6 +84,8 @@ namespace Internal.IL
             _factory = (ILScanNodeFactory)compilation.NodeFactory;
             
             _ilBytes = methodIL.GetILBytes();
+
+            _canonMethodIL = methodIL;
 
             // Get the runtime determined method IL so that this works right in shared code
             // and tokens in shared code resolve to runtime determined types.
@@ -157,14 +160,17 @@ namespace Internal.IL
 
         private ISymbolNode GetGenericLookupHelper(ReadyToRunHelperId helperId, object helperArgument)
         {
+            GenericDictionaryLookup lookup = _compilation.ComputeGenericLookup(_canonMethod, helperId, helperArgument);
+            Debug.Assert(lookup.UseHelper);
+
             if (_canonMethod.RequiresInstMethodDescArg())
             {
-                return _compilation.NodeFactory.ReadyToRunHelperFromDictionaryLookup(helperId, helperArgument, _canonMethod);
+                return _compilation.NodeFactory.ReadyToRunHelperFromDictionaryLookup(lookup.HelperId, lookup.HelperObject, _canonMethod);
             }
             else
             {
                 Debug.Assert(_canonMethod.RequiresInstArg() || _canonMethod.AcquiresInstMethodTableFromThis());
-                return _compilation.NodeFactory.ReadyToRunHelperFromTypeLookup(helperId, helperArgument, _canonMethod.OwningType);
+                return _compilation.NodeFactory.ReadyToRunHelperFromTypeLookup(lookup.HelperId, lookup.HelperObject, _canonMethod.OwningType);
             }
         }
 
@@ -239,38 +245,22 @@ namespace Internal.IL
         {
             TypeDesc type = (TypeDesc)_methodIL.GetObject(token);
 
-            // Nullable needs to be unwrapped
-            if (type.IsNullable)
-                type = type.Instantiation[0];
-
             if (type.IsRuntimeDeterminedSubtype)
             {
-                _dependencies.Add(GetGenericLookupHelper(ReadyToRunHelperId.TypeHandle, type), "IsInst/CastClass");
+                _dependencies.Add(GetGenericLookupHelper(ReadyToRunHelperId.TypeHandleForCasting, type), "IsInst/CastClass");
             }
             else
             {
-                ReadyToRunHelperId helperId;
-                if (opcode == ILOpcode.isinst)
-                {
-                    helperId = ReadyToRunHelperId.IsInstanceOf;
-                }
-                else
-                {
-                    Debug.Assert(opcode == ILOpcode.castclass);
-                    helperId = ReadyToRunHelperId.CastClass;
-                }
-
-                _dependencies.Add(_factory.ReadyToRunHelper(helperId, type), "IsInst/CastClass");
+                _dependencies.Add(_compilation.ComputeConstantLookup(ReadyToRunHelperId.TypeHandleForCasting, type), "IsInst/CastClass");
             }
         }
         
         private void ImportCall(ILOpcode opcode, int token)
         {
-            // Strip runtime determined characteristics off of the method (because that's how RyuJIT operates)
+            // We get both the canonical and runtime determined form - JitInterface mostly operates
+            // on the canonical form.
             var runtimeDeterminedMethod = (MethodDesc)_methodIL.GetObject(token);
-            MethodDesc method = runtimeDeterminedMethod;
-            if (runtimeDeterminedMethod.IsRuntimeDeterminedExactMethod)
-                method = runtimeDeterminedMethod.GetCanonMethodTarget(CanonicalFormKind.Specific);
+            var method = (MethodDesc)_canonMethodIL.GetObject(token);
 
             if (method.IsRawPInvoke())
             {
@@ -617,27 +607,9 @@ namespace Internal.IL
                     if (instParam != null)
                     {
                         _dependencies.Add(instParam, reason);
+                    }
 
-                        if (!referencingArrayAddressMethod)
-                        {
-                            _dependencies.Add(_compilation.NodeFactory.ShadowConcreteMethod(concreteMethod), reason);
-                        }
-                        else
-                        {
-                            // We don't want array Address method to be modeled in the generic dependency analysis.
-                            // The method doesn't actually have runtime determined dependencies (won't do
-                            // any generic lookups).
-                            _dependencies.Add(_compilation.NodeFactory.MethodEntrypoint(targetMethod), reason);
-                        }
-                    }
-                    else if (targetMethod.AcquiresInstMethodTableFromThis())
-                    {
-                        _dependencies.Add(_compilation.NodeFactory.ShadowConcreteMethod(concreteMethod), reason);
-                    }
-                    else
-                    {
-                        _dependencies.Add(_compilation.NodeFactory.MethodEntrypoint(targetMethod), reason);
-                    }
+                    _dependencies.Add(_compilation.NodeFactory.MethodEntrypoint(targetMethod), reason);
                 }
             }
             else if (method.HasInstantiation)
@@ -757,6 +729,7 @@ namespace Internal.IL
         private void ImportMkRefAny(int token)
         {
             _dependencies.Add(GetHelperEntrypoint(ReadyToRunHelper.TypeHandleToRuntimeType), "mkrefany");
+            _dependencies.Add(GetHelperEntrypoint(ReadyToRunHelper.TypeHandleToRuntimeTypeHandle), "mkrefany");
         }
 
         private void ImportLdToken(int token)
@@ -777,6 +750,7 @@ namespace Internal.IL
                 }
 
                 // If this is a ldtoken Type / GetValueInternal sequence, we're done.
+                // If this is a ldtoken Type / Type.GetTypeFromHandle sequence, we need one more helper.
                 BasicBlock nextBasicBlock = _basicBlocks[_currentOffset];
                 if (nextBasicBlock == null)
                 {
@@ -788,6 +762,11 @@ namespace Internal.IL
                         {
                             // Codegen expands this and doesn't do the normal ldtoken.
                             return;
+                        }
+                        else if (IsTypeGetTypeFromHandle(method))
+                        {
+                            // Codegen will swap this one for GetRuntimeTypeHandle when optimizing
+                            _dependencies.Add(GetHelperEntrypoint(ReadyToRunHelper.GetRuntimeType), "ldtoken");
                         }
                     }
                 }
@@ -979,7 +958,7 @@ namespace Internal.IL
             }
             else
             {
-                _dependencies.Add(_factory.ReadyToRunHelper(ReadyToRunHelperId.NewArr1, type), "newarr");
+                _dependencies.Add(_factory.ConstructedTypeSymbol(type), "newarr");
             }
         }
 
@@ -1087,6 +1066,20 @@ namespace Internal.IL
                 if (owningType != null)
                 {
                     return owningType.Name == "RuntimeTypeHandle" && owningType.Namespace == "System";
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsTypeGetTypeFromHandle(MethodDesc method)
+        {
+            if (method.IsIntrinsic && method.Name == "GetTypeFromHandle")
+            {
+                MetadataType owningType = method.OwningType as MetadataType;
+                if (owningType != null)
+                {
+                    return owningType.Name == "Type" && owningType.Namespace == "System";
                 }
             }
 

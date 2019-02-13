@@ -29,11 +29,6 @@ namespace System
     // IList<U> and IReadOnlyList<U>, where T : U dynamically.  See the SZArrayHelper class for details.
     public abstract partial class Array : ICollection, IEnumerable, IList, IStructuralComparable, IStructuralEquatable, ICloneable
     {
-        // This ctor exists solely to prevent C# from generating a protected .ctor that violates the surface area. I really want this to be a
-        // "protected-and-internal" rather than "internal" but C# has no keyword for the former.
-        internal Array() { }
-
-
         // CS0649: Field '{blah}' is never assigned to, and will always have its default value
 #pragma warning disable 649
         // This field should be the first field in Array as the runtime/compilers depend on it
@@ -56,6 +51,14 @@ namespace System
                 // NOTE: The compiler has assumptions about the implementation of this method.
                 // Changing the implementation here (or even deleting this) will NOT have the desired impact
                 return _numComponents;
+            }
+        }
+
+        public long LongLength
+        {
+            get
+            {
+                return Length;
             }
         }
 
@@ -445,7 +448,7 @@ namespace System
                 ref object refDestinationArray = ref Unsafe.As<byte, object>(ref destinationArray.GetRawArrayData());
                 for (int i = 0; i < length; i++)
                 {
-                    Object boxedValue = RuntimeImports.RhBox(sourceElementEEType, pElement);
+                    object boxedValue = RuntimeImports.RhBox(sourceElementEEType, pElement);
                     Unsafe.Add(ref refDestinationArray, destinationIndex + i) = boxedValue;
                     pElement += sourceElementSize;
                 }
@@ -474,7 +477,7 @@ namespace System
 
                 for (int i = 0; i < length; i++)
                 {
-                    Object boxedValue = Unsafe.Add(ref refSourceArray, sourceIndex + i);
+                    object boxedValue = Unsafe.Add(ref refSourceArray, sourceIndex + i);
                     if (boxedValue == null)
                     {
                         if (!isNullable)
@@ -872,12 +875,6 @@ namespace System
             Debug.Assert(false);
         }
 
-        // We impose limits on maximum array length in each dimension to allow efficient 
-        // implementation of advanced range check elimination in future.
-        // Keep in sync with vm\gcscan.cpp and HashHelpers.MaxPrimeArrayLength.
-        internal const int MaxArrayLength = 0X7FEFFFFF;
-        internal const int MaxByteArrayLength = MaxArrayLength;
-
         public int GetLength(int dimension)
         {
             int length = GetUpperBound(dimension) + 1;
@@ -918,7 +915,7 @@ namespace System
                 if (length > MaxArrayLength)
                     maxArrayDimensionLengthOverflow = true;
                 totalLength = totalLength * (ulong)length;
-                if (totalLength > Int32.MaxValue)
+                if (totalLength > int.MaxValue)
                     throw new OutOfMemoryException(); // "Array dimensions exceeded supported range."
             }
 
@@ -938,29 +935,19 @@ namespace System
         }
 
         // Wraps an IComparer inside an IComparer<Object>.
-        private sealed class ComparerAsComparerT : IComparer<Object>
+        private sealed class ComparerAsComparerT : IComparer<object>
         {
             public ComparerAsComparerT(IComparer comparer)
             {
                 _comparer = (comparer == null) ? Comparer.Default : comparer;
             }
 
-            public int Compare(Object x, Object y)
+            public int Compare(object x, object y)
             {
                 return _comparer.Compare(x, y);
             }
 
             private IComparer _comparer;
-        }
-
-        public static T[] Empty<T>()
-        {
-            return EmptyArray<T>.Value;
-        }
-
-        private static class EmptyArray<T>
-        {
-            internal static readonly T[] Value = new T[0];
         }
 
         public int GetLowerBound(int dimension)
@@ -999,7 +986,7 @@ namespace System
             return Length - 1;
         }
 
-        public unsafe Object GetValue(int index)
+        public unsafe object GetValue(int index)
         {
             if (!IsSzArray)
             {
@@ -1018,7 +1005,7 @@ namespace System
             return GetValueWithFlattenedIndex_NoErrorCheck(index);
         }
 
-        public unsafe Object GetValue(int index1, int index2)
+        public unsafe object GetValue(int index1, int index2)
         {
             if (Rank != 2)
                 throw new ArgumentException(SR.Arg_Need2DArray);
@@ -1029,7 +1016,7 @@ namespace System
             return GetValue(pIndices, 2);
         }
 
-        public unsafe Object GetValue(int index1, int index2, int index3)
+        public unsafe object GetValue(int index1, int index2, int index3)
         {
             if (Rank != 3)
                 throw new ArgumentException(SR.Arg_Need3DArray);
@@ -1041,7 +1028,7 @@ namespace System
             return GetValue(pIndices, 3);
         }
 
-        public unsafe Object GetValue(params int[] indices)
+        public unsafe object GetValue(params int[] indices)
         {
             if (indices == null)
                 throw new ArgumentNullException(nameof(indices));
@@ -1059,7 +1046,7 @@ namespace System
                 return GetValue(pIndices, length);
         }
 
-        private unsafe Object GetValue(int* pIndices, int rank)
+        private unsafe object GetValue(int* pIndices, int rank)
         {
             Debug.Assert(Rank == rank);
             Debug.Assert(!IsSzArray);
@@ -1085,7 +1072,7 @@ namespace System
             return GetValueWithFlattenedIndex_NoErrorCheck(flattenedIndex);
         }
 
-        private Object GetValueWithFlattenedIndex_NoErrorCheck(int flattenedIndex)
+        private object GetValueWithFlattenedIndex_NoErrorCheck(int flattenedIndex)
         {
             ref byte element = ref Unsafe.AddByteOffset(ref GetRawArrayData(), (nuint)flattenedIndex * ElementSize);
 
@@ -1101,7 +1088,7 @@ namespace System
             }
         }
 
-        public unsafe void SetValue(Object value, int index)
+        public unsafe void SetValue(object value, int index)
         {
             if (!IsSzArray)
             {
@@ -1146,7 +1133,7 @@ namespace System
             }
         }
 
-        public unsafe void SetValue(Object value, int index1, int index2)
+        public unsafe void SetValue(object value, int index1, int index2)
         {
             if (Rank != 2)
                 throw new ArgumentException(SR.Arg_Need2DArray);
@@ -1157,7 +1144,7 @@ namespace System
             SetValue(value, pIndices, 2);
         }
 
-        public unsafe void SetValue(Object value, int index1, int index2, int index3)
+        public unsafe void SetValue(object value, int index1, int index2, int index3)
         {
             if (Rank != 3)
                 throw new ArgumentException(SR.Arg_Need3DArray);
@@ -1169,7 +1156,7 @@ namespace System
             SetValue(value, pIndices, 3);
         }
 
-        public unsafe void SetValue(Object value, params int[] indices)
+        public unsafe void SetValue(object value, params int[] indices)
         {
             if (indices == null)
                 throw new ArgumentNullException(nameof(indices));
@@ -1193,7 +1180,7 @@ namespace System
             }
         }
 
-        private unsafe void SetValue(Object value, int* pIndices, int rank)
+        private unsafe void SetValue(object value, int* pIndices, int rank)
         {
             Debug.Assert(Rank == rank);
             Debug.Assert(!IsSzArray);
@@ -1241,7 +1228,7 @@ namespace System
                 {
                     throw new InvalidCastException(SR.InvalidCast_StoreArrayElement);
                 }
-                Unsafe.As<byte, Object>(ref element) = value;
+                Unsafe.As<byte, object>(ref element) = value;
             }
         }
 
@@ -1253,9 +1240,45 @@ namespace System
             }
         }
 
-        private sealed partial class ArrayEnumerator : IEnumerator, ICloneable
+        public IEnumerator GetEnumerator()
         {
-            public Object Current
+            return new ArrayEnumerator(this);
+        }
+
+        private sealed class ArrayEnumerator : IEnumerator, ICloneable
+        {
+            private Array _array;
+            private int _index;
+            private int _endIndex; // cache array length, since it's a little slow.
+
+            internal ArrayEnumerator(Array array)
+            {
+                _array = array;
+                _index = -1;
+                _endIndex = array.Length;
+            }
+
+            public bool MoveNext()
+            {
+                if (_index < _endIndex)
+                {
+                    _index++;
+                    return (_index < _endIndex);
+                }
+                return false;
+            }
+
+            public void Reset()
+            {
+                _index = -1;
+            }
+
+            public object Clone()
+            {
+                return MemberwiseClone();
+            }
+
+            public object Current
             {
                 get
                 {
@@ -1332,9 +1355,9 @@ namespace System
 
         static void SortImpl(Array keys, Array items, int index, int length, IComparer comparer)
         {
-            IComparer<Object> comparerT = new ComparerAsComparerT(comparer);
-            Object[] objKeys = keys as Object[];
-            Object[] objItems = items as Object[];
+            IComparer<object> comparerT = new ComparerAsComparerT(comparer);
+            object[] objKeys = keys as object[];
+            object[] objItems = items as object[];
 
             // Unfortunately, on Project N, we don't have the ability to specialize ArraySortHelper<> on demand
             // for value types. Rather than incur a boxing cost on every compare and every swap (and maintain a separate introsort algorithm
@@ -1343,12 +1366,12 @@ namespace System
             // Check if either of the arrays need to be copied.
             if (objKeys == null)
             {
-                objKeys = new Object[index + length];
+                objKeys = new object[index + length];
                 Array.CopyImplValueTypeArrayToReferenceArray(keys, index, objKeys, index, length, reliable: false);
             }
             if (objItems == null && items != null)
             {
-                objItems = new Object[index + length];
+                objItems = new object[index + length];
                 Array.CopyImplValueTypeArrayToReferenceArray(items, index, objItems, index, length, reliable: false);
             }
 

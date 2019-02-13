@@ -18,9 +18,9 @@ namespace System
     [Serializable]
     [CLSCompliant(false)]
     [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
-    public struct UIntPtr : IEquatable<UIntPtr>, ISerializable
+    public readonly struct UIntPtr : IEquatable<UIntPtr>, ISerializable
     {
-        private unsafe void* _value; // Do not rename (binary serialization)
+        private readonly unsafe void* _value; // Do not rename (binary serialization)
 
         [Intrinsic]
         public static readonly UIntPtr Zero;
@@ -60,7 +60,7 @@ namespace System
             _value = (void*)l;
         }
 
-        unsafe void ISerializable.GetObjectData(SerializationInfo info, StreamingContext context)
+        void ISerializable.GetObjectData(SerializationInfo info, StreamingContext context)
         {
             if (info == null)
                 throw new ArgumentNullException(nameof(info));
@@ -68,7 +68,7 @@ namespace System
             info.AddValue("value", ToUInt64());
         }
 
-        public unsafe override bool Equals(Object obj)
+        public unsafe override bool Equals(object obj)
         {
             if (obj is UIntPtr)
             {
@@ -77,9 +77,9 @@ namespace System
             return false;
         }
 
-        unsafe bool IEquatable<UIntPtr>.Equals(UIntPtr value)
+        unsafe bool IEquatable<UIntPtr>.Equals(UIntPtr other)
         {
-            return _value == value._value;
+            return _value == other._value;
         }
 
         public unsafe override int GetHashCode()
@@ -196,7 +196,7 @@ namespace System
             return new UIntPtr((nuint)pointer._value - (nuint)offset);
         }
 
-        public static unsafe int Size
+        public static int Size
         {
             [Intrinsic]
             [NonVersionable]
@@ -208,6 +208,9 @@ namespace System
 
         [Intrinsic]
         [NonVersionable]
+#if PROJECTN
+        [System.Runtime.CompilerServices.DependencyReductionRootAttribute]
+#endif
         public unsafe void* ToPointer()
         {
             return _value;

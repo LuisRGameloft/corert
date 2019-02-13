@@ -70,14 +70,6 @@ namespace System.Security
             }
         }
 
-        private void EnsureNotDisposed()
-        {
-            if (_buffer == null)
-            {
-                throw new ObjectDisposedException(GetType().Name);
-            }
-        }
-
         private void ClearCore()
         {
             _decryptedLength = 0;
@@ -143,7 +135,7 @@ namespace System.Security
             _buffer.Write((ulong)(index * sizeof(char)), c);
         }
 
-        internal unsafe IntPtr MarshalToBSTR()
+        internal unsafe IntPtr MarshalToBSTRCore()
         {
             int length = _decryptedLength;
             IntPtr ptr = IntPtr.Zero;
@@ -155,7 +147,7 @@ namespace System.Security
                 _buffer.AcquirePointer(ref bufferPtr);
                 int resultByteLength = (length + 1) * sizeof(char);
 
-                ptr = PInvokeMarshal.AllocBSTR(length);
+                ptr = Marshal.AllocBSTR(length);
 
                 Buffer.MemoryCopy(bufferPtr, (byte*)ptr, resultByteLength, length * sizeof(char));
 
@@ -167,7 +159,7 @@ namespace System.Security
                 if (result == IntPtr.Zero && ptr != IntPtr.Zero)
                 {
                     RuntimeImports.RhZeroMemory(ptr, (UIntPtr)(length * sizeof(char)));
-                    PInvokeMarshal.FreeBSTR(ptr);
+                    Marshal.FreeBSTR(ptr);
                 }
 
                 if (bufferPtr != null)

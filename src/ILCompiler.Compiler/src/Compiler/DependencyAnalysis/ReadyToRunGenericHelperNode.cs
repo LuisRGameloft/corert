@@ -20,6 +20,11 @@ namespace ILCompiler.DependencyAnalysis
         protected TypeSystemEntity _dictionaryOwner;
         protected GenericLookupResult _lookupSignature;
 
+        public ReadyToRunHelperId Id => _id;
+        public Object Target => _target;
+        public TypeSystemEntity DictionaryOwner => _dictionaryOwner;
+        public GenericLookupResult LookupSignature => _lookupSignature;
+
         public ReadyToRunGenericHelperNode(NodeFactory factory, ReadyToRunHelperId helperId, object target, TypeSystemEntity dictionaryOwner)
         {
             _id = helperId;
@@ -38,6 +43,10 @@ namespace ILCompiler.DependencyAnalysis
             {
                 case ReadyToRunHelperId.TypeHandle:
                     return factory.GenericLookup.Type((TypeDesc)target);
+                case ReadyToRunHelperId.TypeHandleForCasting:
+                    // Check that we unwrapped the cases that could be unwrapped to prevent duplicate entries
+                    Debug.Assert(factory.GenericLookup.Type((TypeDesc)target) != factory.GenericLookup.UnwrapNullableType((TypeDesc)target));
+                    return factory.GenericLookup.UnwrapNullableType((TypeDesc)target);
                 case ReadyToRunHelperId.MethodHandle:
                     return factory.GenericLookup.MethodHandle((MethodDesc)target);
                 case ReadyToRunHelperId.FieldHandle:
@@ -208,7 +217,7 @@ namespace ILCompiler.DependencyAnalysis
             return conditionalDependencies;
         }
         
-        protected internal override int CompareToImpl(SortableDependencyNode other, CompilerComparer comparer)
+        public override int CompareToImpl(ISortableNode other, CompilerComparer comparer)
         {
             var compare = _id.CompareTo(((ReadyToRunGenericHelperNode)other)._id);
             if (compare != 0)
@@ -274,7 +283,7 @@ namespace ILCompiler.DependencyAnalysis
             AppendLookupSignatureMangledName(nameMangler, sb);
         }
 
-        protected internal override int ClassCode => 1055354299;
+        public override int ClassCode => 1055354299;
     }
 
     public partial class ReadyToRunGenericLookupFromTypeNode : ReadyToRunGenericHelperNode
@@ -296,6 +305,6 @@ namespace ILCompiler.DependencyAnalysis
             AppendLookupSignatureMangledName(nameMangler, sb);
         }
 
-        protected internal override int ClassCode => 913214059;
+        public override int ClassCode => 913214059;
     }
 }

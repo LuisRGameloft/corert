@@ -245,9 +245,12 @@ extern "C" void RhpUniversalTransition_DebugStepTailCall()
 {
     throw "RhpUniversalTransition_DebugStepTailCall";
 }
+extern "C" void ConstrainedCallSupport_GetStubs()
+{
+    throw "ConstrainedCallSupport_GetStubs";
+}
 
-void* RtRHeaderWrapper();
-
+extern "C" void* RtRHeaderWrapper();
 #endif // CPPCODEGEN
 
 // This works around System.Private.Interop's references to Interop.Native.
@@ -341,8 +344,7 @@ static int InitializeRuntime()
 #ifndef CPPCODEGEN
     InitializeModules(osModule, __modules_a, (int)((__modules_z - __modules_a)), (void **)&c_classlibFunctions, _countof(c_classlibFunctions));
 #elif defined _WASM_
-    // WASMTODO: Figure out what to do here. This is a NativeCallable method in the runtime
-    // and we also would have to figure out what to pass for pModuleHeaders
+    InitializeModules(nullptr, (void**)RtRHeaderWrapper(), 1, nullptr, 0);
 #else // !CPPCODEGEN
     InitializeModules(nullptr, (void**)RtRHeaderWrapper(), 2, (void **)&c_classlibFunctions, _countof(c_classlibFunctions));
 #endif // !CPPCODEGEN

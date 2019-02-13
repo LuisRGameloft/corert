@@ -59,8 +59,10 @@ namespace Internal.Runtime.TypeLoader
                 }
             }
 
+            TargetDetails target = type.Context.Target;
+
             LayoutInt byteCountAlignment = position[InstanceAlignmentEntry];
-            byteCountAlignment = type.Context.Target.GetObjectAlignment(byteCountAlignment);
+            byteCountAlignment = target.GetObjectAlignment(byteCountAlignment);
 
             ComputedInstanceFieldLayout layout = new ComputedInstanceFieldLayout()
             {
@@ -71,13 +73,13 @@ namespace Internal.Runtime.TypeLoader
 
             if (!type.IsValueType)
             {
-                layout.FieldAlignment = type.Context.Target.LayoutPointerSize;
-                layout.FieldSize = type.Context.Target.LayoutPointerSize;
+                layout.FieldAlignment = target.LayoutPointerSize;
+                layout.FieldSize = target.LayoutPointerSize;
             }
             else
             {
                 layout.FieldAlignment = position[InstanceAlignmentEntry];
-                layout.FieldSize = LayoutInt.AlignUp(position[(int)NativeFormat.FieldStorage.Instance], layout.FieldAlignment);
+                layout.FieldSize = LayoutInt.AlignUp(position[(int)NativeFormat.FieldStorage.Instance], layout.FieldAlignment, target);
             }
 
             int curInstanceField = 0;
@@ -120,7 +122,8 @@ namespace Internal.Runtime.TypeLoader
             {
                 layout.GcStatics = new StaticsBlock() { Size = position[(int)NativeFormat.FieldStorage.GCStatic], LargestAlignment = DefType.MaximumAlignmentPossible };
                 layout.NonGcStatics = new StaticsBlock() { Size = position[(int)NativeFormat.FieldStorage.NonGCStatic], LargestAlignment = DefType.MaximumAlignmentPossible };
-                layout.ThreadStatics = new StaticsBlock() { Size = position[(int)NativeFormat.FieldStorage.TLSStatic], LargestAlignment = DefType.MaximumAlignmentPossible };
+                layout.ThreadGcStatics = new StaticsBlock() { Size = position[(int)NativeFormat.FieldStorage.TLSStatic], LargestAlignment = DefType.MaximumAlignmentPossible };
+                layout.ThreadNonGcStatics = new StaticsBlock() { Size = LayoutInt.Zero, LargestAlignment = LayoutInt.Zero };
             }
 
             int curStaticField = 0;
@@ -179,7 +182,8 @@ namespace Internal.Runtime.TypeLoader
                 GcStatics = new StaticsBlock() { Size = gcDataSize, LargestAlignment = DefType.MaximumAlignmentPossible },
                 NonGcStatics = new StaticsBlock() { Size = nonGcDataSize, LargestAlignment = DefType.MaximumAlignmentPossible },
                 Offsets = null, // We're not computing field offsets here, so return null
-                ThreadStatics = new StaticsBlock() { Size = threadDataSize, LargestAlignment = DefType.MaximumAlignmentPossible },
+                ThreadGcStatics = new StaticsBlock() { Size = threadDataSize, LargestAlignment = DefType.MaximumAlignmentPossible },
+                ThreadNonGcStatics = new StaticsBlock() { Size = LayoutInt.Zero, LargestAlignment = LayoutInt.Zero },
             };
 
             return staticLayout;
@@ -369,7 +373,7 @@ namespace Internal.Runtime.TypeLoader
                         alignRequired = LayoutInt.Max(alignRequired, alignment);
                     }
 
-                    position[fieldStorage] = LayoutInt.AlignUp(position[fieldStorage], alignment);
+                    position[fieldStorage] = LayoutInt.AlignUp(position[fieldStorage], alignment, type.Context.Target);
                     TypeLoaderLogger.WriteLine(" --> Field type " + fieldType.ToString() +
                         " storage " + ((uint)(type.NativeLayoutFields[i].FieldStorage)).LowLevelToString() +
                         " offset " + position[fieldStorage].LowLevelToString() +

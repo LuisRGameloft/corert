@@ -18,7 +18,7 @@ namespace ILCompiler.DependencyAnalysis
     /// types. It only fills out enough pieces of the EEType structure so that the GC can operate on it. Runtime should
     /// never see these.
     /// </summary>
-    internal class GCStaticEETypeNode : ObjectNode, ISymbolDefinitionNode
+    public class GCStaticEETypeNode : ObjectNode, ISymbolDefinitionNode
     {
         private GCPointerMap _gcMap;
         private TargetDetails _target;
@@ -69,7 +69,7 @@ namespace ILCompiler.DependencyAnalysis
             dataBuilder.AddSymbol(this);
 
             // +1 for SyncBlock (in CoreRT static size already includes EEType)
-            Debug.Assert(factory.Target.Abi == TargetAbi.CoreRT);
+            Debug.Assert(factory.Target.Abi == TargetAbi.CoreRT || factory.Target.Abi == TargetAbi.CppCodegen);
             int totalSize = (_gcMap.Size + 1) * _target.PointerSize;
 
             // We only need to check for containsPointers because ThreadStatics are always allocated
@@ -101,9 +101,9 @@ namespace ILCompiler.DependencyAnalysis
             return dataBuilder.ToObjectData();
         }
 
-        protected internal override int ClassCode => 1304929125;
+        public override int ClassCode => 1304929125;
 
-        protected internal override int CompareToImpl(SortableDependencyNode other, CompilerComparer comparer)
+        public override int CompareToImpl(ISortableNode other, CompilerComparer comparer)
         {
             return _gcMap.CompareTo(((GCStaticEETypeNode)other)._gcMap);
         }

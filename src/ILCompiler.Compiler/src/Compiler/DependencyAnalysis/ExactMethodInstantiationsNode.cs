@@ -14,7 +14,7 @@ namespace ILCompiler.DependencyAnalysis
     /// <summary>
     /// Hashtable of all exact (non-canonical) generic method instantiations compiled in the module.
     /// </summary>
-    internal sealed class ExactMethodInstantiationsNode : ObjectNode, ISymbolDefinitionNode
+    public sealed class ExactMethodInstantiationsNode : ObjectNode, ISymbolDefinitionNode
     {
         private ObjectAndOffsetSymbolNode _endSymbol;
         private ExternalReferencesTableNode _externalReferences;
@@ -152,6 +152,6 @@ namespace ILCompiler.DependencyAnalysis
         }
 
         protected internal override int Phase => (int)ObjectNodePhase.Ordered;
-        protected internal override int ClassCode => (int)ObjectNodeOrder.ExactMethodInstantiationsNode;
+        public override int ClassCode => (int)ObjectNodeOrder.ExactMethodInstantiationsNode;
     }
 }

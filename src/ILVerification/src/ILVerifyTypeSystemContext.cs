@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
@@ -19,6 +20,7 @@ namespace ILVerify
 
         private RuntimeInterfacesAlgorithm _arrayOfTRuntimeInterfacesAlgorithm;
         private MetadataRuntimeInterfacesAlgorithm _metadataRuntimeInterfacesAlgorithm = new MetadataRuntimeInterfacesAlgorithm();
+        private MetadataVirtualMethodAlgorithm _metadataVirtualMethodAlgorithm = new MetadataVirtualMethodAlgorithm();
 
         private readonly Dictionary<PEReader, EcmaModule> _modulesCache = new Dictionary<PEReader, EcmaModule>();
 
@@ -29,18 +31,39 @@ namespace ILVerify
 
         public override ModuleDesc ResolveAssembly(AssemblyName name, bool throwIfNotFound = true)
         {
-            PEReader peReader = _resolver.Resolve(name);
-            if (peReader == null && throwIfNotFound)
-            {
-                throw new VerifierException("Assembly or module not found: " + name.Name);
-            }
+            // Note: we use simple names instead of full names to resolve, because we can't get a full name from an assembly without reading it
+            string simpleName = name.Name;
+            return ResolveAssemblyOrNetmodule(simpleName, simpleName, null, throwIfNotFound);
+        }
 
-            var module = GetModule(peReader);
-            VerifyModuleName(name, module);
+        internal override ModuleDesc ResolveModule(IAssemblyDesc referencingModule, string fileName, bool throwIfNotFound = true)
+        {
+            // Referenced modules are stored without their extension (see CommandLineHelpers.cs), so we have to drop
+            // the extension here as well to find a match.
+            string simpleName = Path.GetFileNameWithoutExtension(fileName);
+            // The referencing module is not getting verified currently.
+            // However, netmodules are resolved in the context of assembly, not in the global context.
+            EcmaModule module = ResolveAssemblyOrNetmodule(simpleName, fileName, referencingModule as IAssemblyDesc, throwIfNotFound);
+            if (module.MetadataReader.IsAssembly)
+            {
+                throw new VerifierException($"The module '{fileName}' is not expected to be an assembly");
+            }
             return module;
         }
 
-        private static void VerifyModuleName(AssemblyName name, EcmaModule module)
+        private EcmaModule ResolveAssemblyOrNetmodule(string simpleName, string verificationName, IAssemblyDesc containingAssembly, bool throwIfNotFound)
+        {
+            PEReader peReader = _resolver.Resolve(simpleName);
+            if (peReader == null && throwIfNotFound)
+            {
+                throw new VerifierException("Assembly or module not found: " + simpleName);
+            }
+            var module = GetModule(peReader, containingAssembly);
+            VerifyModuleName(verificationName, module);
+            return module;
+        }
+
+        private static void VerifyModuleName(string simpleName, EcmaModule module)
         {
             MetadataReader metadataReader = module.MetadataReader;
             StringHandle nameHandle = metadataReader.IsAssembly
@@ -48,9 +71,9 @@ namespace ILVerify
                 : metadataReader.GetModuleDefinition().Name;
 
             string actualSimpleName = metadataReader.GetString(nameHandle);
-            if (!actualSimpleName.Equals(name.Name, StringComparison.OrdinalIgnoreCase))
+            if (!actualSimpleName.Equals(simpleName, StringComparison.OrdinalIgnoreCase))
             {
-                throw new VerifierException($"Actual PE name '{actualSimpleName}' does not match provided name '{name}'");
+                throw new VerifierException($"Actual PE name '{actualSimpleName}' does not match provided name '{simpleName}'");
             }
         }
 
@@ -68,7 +91,12 @@ namespace ILVerify
             return _metadataRuntimeInterfacesAlgorithm;
         }
 
-        internal EcmaModule GetModule(PEReader peReader)
+        public override VirtualMethodAlgorithm GetVirtualMethodAlgorithmForType(TypeDesc type)
+        {
+            return _metadataVirtualMethodAlgorithm;
+        }
+
+        internal EcmaModule GetModule(PEReader peReader, IAssemblyDesc containingAssembly = null)
         {
             if (peReader == null)
             {
@@ -77,10 +105,14 @@ namespace ILVerify
 
             if (_modulesCache.TryGetValue(peReader, out EcmaModule existingModule))
             {
+                if (containingAssembly != null && existingModule.Assembly != containingAssembly)
+                {
+                    throw new VerifierException($"Containing assembly for module '{existingModule}' must be '{containingAssembly}'");
+                }
                 return existingModule;
             }
 
-            EcmaModule module = EcmaModule.Create(this, peReader);
+            EcmaModule module = EcmaModule.Create(this, peReader, containingAssembly);
             _modulesCache.Add(peReader, module);
             return module;
         }

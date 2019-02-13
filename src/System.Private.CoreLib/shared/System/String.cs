@@ -11,17 +11,18 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
+using Internal.Runtime.CompilerServices;
 
 namespace System
 {
     // The String class represents a static string of characters.  Many of
-    // the String methods perform some type of transformation on the current
-    // instance and return the result as a new String.  As with arrays, character
+    // the string methods perform some type of transformation on the current
+    // instance and return the result as a new string.  As with arrays, character
     // positions (indices) are zero-based.
 
     [Serializable]
     [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
-    public sealed partial class String : IComparable, IEnumerable, IEnumerable<char>, IComparable<String>, IEquatable<String>, IConvertible, ICloneable
+    public sealed partial class String : IComparable, IEnumerable, IConvertible, IEnumerable<char>, IComparable<string>, IEquatable<string>, ICloneable
     {
         // String constructors
         // These are special. The implementation methods for these have a different signature from the
@@ -162,15 +163,7 @@ namespace System
             if (pb == null)
                 return Empty;
 
-            int numBytes = new ReadOnlySpan<byte>((byte*)value, int.MaxValue).IndexOf<byte>(0);
-
-#if BIT64
-            // Check for overflow
-            if (numBytes < 0)
-                throw new ArgumentException(SR.Arg_MustBeNullTerminatedString);
-#else
-            Debug.Assert(numBytes >= 0);
-#endif
+            int numBytes = strlen((byte*)value);
 
             return CreateStringForSByteConstructor(pb, numBytes);
         }
@@ -194,7 +187,12 @@ namespace System
                 throw new ArgumentOutOfRangeException(nameof(length), SR.ArgumentOutOfRange_NegativeLength);
 
             if (value == null)
+            {
+                if (length == 0)
+                    return Empty;
+
                 throw new ArgumentNullException(nameof(value));
+            }
 
             byte* pStart = (byte*)(value + startIndex);
 
@@ -214,9 +212,7 @@ namespace System
             if (numBytes == 0)
                 return Empty;
 
-#if PLATFORM_UNIX
-            return Encoding.UTF8.GetString(pb, numBytes);
-#else
+#if PLATFORM_WINDOWS
             int numCharsRequired = Interop.Kernel32.MultiByteToWideChar(Interop.Kernel32.CP_ACP, Interop.Kernel32.MB_PRECOMPOSED, pb, numBytes, (char*)null, 0);
             if (numCharsRequired == 0)
                 throw new ArgumentException(SR.Arg_InvalidANSIString);
@@ -229,6 +225,8 @@ namespace System
             if (numCharsRequired == 0)
                 throw new ArgumentException(SR.Arg_InvalidANSIString);
             return newString;
+#else
+            return Encoding.UTF8.GetString(pb, numBytes);
 #endif
         }
 
@@ -252,6 +250,14 @@ namespace System
 
             if (startIndex < 0)
                 throw new ArgumentOutOfRangeException(nameof(startIndex), SR.ArgumentOutOfRange_StartIndex);
+
+            if (value == null)
+            {
+                if (length == 0)
+                    return Empty;
+
+                throw new ArgumentNullException(nameof(value));
+            }
 
             byte* pStart = (byte*)(value + startIndex);
 
@@ -351,6 +357,7 @@ namespace System
             return result;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static implicit operator ReadOnlySpan<char>(string value) =>
             value != null ? new ReadOnlySpan<char>(ref value.GetRawStringData(), value.Length) : default;
 
@@ -428,8 +435,27 @@ namespace System
         [NonVersionable]
         public static bool IsNullOrEmpty(string value)
         {
-            return (value == null || value.Length == 0);
+            // Using 0u >= (uint)value.Length rather than
+            // value.Length == 0 as it will elide the bounds check to
+            // the first char: value[0] if that is performed following the test
+            // for the same test cost.
+            // Ternary operator returning true/false prevents redundant asm generation:
+            // https://github.com/dotnet/coreclr/issues/914
+            return (value == null || 0u >= (uint)value.Length) ? true : false;
         }
+
+        [System.Runtime.CompilerServices.IndexerName("Chars")]
+        public char this[Index index]
+        {
+            get
+            {
+                int actualIndex = index.GetOffset(Length);
+                return this[actualIndex];
+            }
+        }
+
+        [System.Runtime.CompilerServices.IndexerName("Chars")]
+        public string this[Range range] => Substring(range);
 
         public static bool IsNullOrWhiteSpace(string value)
         {
@@ -437,7 +463,7 @@ namespace System
 
             for (int i = 0; i < value.Length; i++)
             {
-                if (!Char.IsWhiteSpace(value[i])) return false;
+                if (!char.IsWhiteSpace(value[i])) return false;
             }
 
             return true;
@@ -483,6 +509,14 @@ namespace System
             return result;
         }
 
+        internal static string CreateFromChar(char c1, char c2)
+        {
+            string result = FastAllocateString(2);
+            result._firstChar = c1;
+            Unsafe.Add(ref result._firstChar, 1) = c2;
+            return result;
+        }
+
         internal static unsafe void wstrcpy(char* dmem, char* smem, int charCount)
         {
             Buffer.Memmove((byte*)dmem, (byte*)smem, ((uint)charCount) * 2);
@@ -514,6 +548,17 @@ namespace System
         IEnumerator IEnumerable.GetEnumerator()
         {
             return new CharEnumerator(this);
+        }
+
+        /// <summary>
+        /// Returns an enumeration of <see cref="Rune"/> from this string.
+        /// </summary>
+        /// <remarks>
+        /// Invalid sequences will be represented in the enumeration by <see cref="Rune.ReplacementChar"/>.
+        /// </remarks>
+        public StringRuneEnumerator EnumerateRunes()
+        {
+            return new StringRuneEnumerator(this);
         }
 
         internal static unsafe int wcslen(char* ptr)
@@ -619,9 +664,28 @@ namespace System
             return count;
         }
 
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static unsafe int strlen(byte* ptr)
+        {
+            // IndexOf processes memory in aligned chunks, and thus it won't crash even if it accesses memory beyond the null terminator.
+            int length = SpanHelpers.IndexOf(ref *ptr, (byte)'\0', int.MaxValue);
+            if (length < 0)
+            {
+                ThrowMustBeNullTerminatedString();
+            }
+
+            return length;
+        }
+
+        private static void ThrowMustBeNullTerminatedString()
+        {
+            throw new ArgumentException(SR.Arg_MustBeNullTerminatedString);
+        }
+
         //
         // IConvertible implementation
-        // 
+        //
 
         public TypeCode GetTypeCode()
         {
@@ -688,7 +752,7 @@ namespace System
             return Convert.ToDouble(this, provider);
         }
 
-        Decimal IConvertible.ToDecimal(IFormatProvider provider)
+        decimal IConvertible.ToDecimal(IFormatProvider provider)
         {
             return Convert.ToDecimal(this, provider);
         }
@@ -698,7 +762,7 @@ namespace System
             return Convert.ToDateTime(this, provider);
         }
 
-        Object IConvertible.ToType(Type type, IFormatProvider provider)
+        object IConvertible.ToType(Type type, IFormatProvider provider)
         {
             return Convert.DefaultToType((IConvertible)this, type, provider);
         }

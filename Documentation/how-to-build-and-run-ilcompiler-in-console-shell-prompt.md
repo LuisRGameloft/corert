@@ -14,9 +14,9 @@ This will result in the following:
 - Build native and managed components of ILCompiler. The final binaries are placed to `<repo_root>\bin\<OS>.<arch>.<Config>\tools`.
 - Build and run tests
 
-# Install .NET Core 2.0 SDK
+# Install .NET Core 2.1 SDK
 
-* Download .NET Core 2.0 SDK from [https://www.microsoft.com/net/download/core](https://www.microsoft.com/net/download/core)
+* Download .NET Core 2.1 SDK from [https://www.microsoft.com/net/download/core](https://www.microsoft.com/net/download/core)
 * On windows ensure you are using the 'x64 Native Tools Command Prompt for VS 2017'
     (This is distinct from the 'Developer Command Prompt for VS 2017')
 
@@ -27,7 +27,7 @@ You should now be able to use the `dotnet` commands of the CLI tools.
 * Ensure that you have done a repo build per the instructions above.
 * Create a new folder and switch into it. 
 * Run `dotnet new console` on the command/shell prompt. This will add a project template. If you get an error, please ensure the [pre-requisites](prerequisites-for-building.md) are installed. 
-* Modify `.csproj` file that is part of your project. A few lines at the top and at the bottom are different from the default template.
+* Modify `.csproj` file that is part of your project. **Important:** A few lines at the top and at the bottom are different from the default template - don't miss updating them!
 
 ```
 <Project>
@@ -35,7 +35,7 @@ You should now be able to use the `dotnet` commands of the CLI tools.
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>netcoreapp2.0</TargetFramework>
+    <TargetFramework>netcoreapp2.1</TargetFramework>
   </PropertyGroup>
 
   <Import Project="$(MSBuildSDKsPath)\Microsoft.NET.Sdk\Sdk\Sdk.targets" />
@@ -61,7 +61,7 @@ From the shell/command prompt, issue the following commands, from the folder con
     dotnet publish -r win-x64|linux-x64|osx-x64 
 ``` 
 
-Native executable will be dropped in `./bin/x64/[configuration]/netcoreapp2.0/publish/` folder and will have the same name as the folder in which your source file is present.
+Native executable will be dropped in `./bin/x64/[configuration]/netcoreapp2.1/publish/` folder and will have the same name as the folder in which your source file is present.
 
 ## Using CPP Code Generator ##
 
@@ -75,7 +75,7 @@ From the shell/command prompt, issue the following commands to generate the nati
 
 For CoreRT debug build on Windows, add an extra `/p:AdditionalCppCompilerFlags=/MTd` argument.
 
-## Disabling Native Compilation 
+## Disabling Native Compilation ##
 
 Native compilation can be disabled during publishing by adding an extra `/p:NativeCompilationDuringPublish=false` argument.
 
@@ -93,7 +93,7 @@ If you are seeing errors such as:
 
 ```
 libcpmtd.lib(nothrow.obj) : fatal error LNK1112: module machine type 'X86' conflicts with target machine type 'x64' [C:\Users\[omitted]\nativetest\app\app.csproj]
-C:\Users\[omitted]\nativetest\bin\Windows_NT.x64.Debug\build\Microsoft.NETCore.Native.targets(151,5): error MSB3073: The command "link  @"obj\Debug\netcoreapp1.0\native\link.rsp"" exited with code 1112. [C:\Users\[omitted]\nativetest\app\app.csproj]
+C:\Users\[omitted]\nativetest\bin\Windows_NT.x64.Debug\build\Microsoft.NETCore.Native.targets(151,5): error MSB3073: The command "link  @"obj\Debug\netcoreapp2.1\native\link.rsp"" exited with code 1112. [C:\Users\[omitted]\nativetest\app\app.csproj]
 ```
 
 or 

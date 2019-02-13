@@ -5,6 +5,7 @@
 using System.Globalization;
 using System.Diagnostics;
 using System.Text;
+using System.Runtime.CompilerServices;
 
 namespace System
 {
@@ -73,7 +74,7 @@ namespace System
             _Minor = minor;
         }
 
-        public Version(String version)
+        public Version(string version)
         {
             Version v = Version.Parse(version);
             _Major = v.Major;
@@ -134,7 +135,7 @@ namespace System
             get { return (short)(_Revision & 0xFFFF); }
         }
 
-        public int CompareTo(Object version)
+        public int CompareTo(object version)
         {
             if (version == null)
             {
@@ -154,7 +155,7 @@ namespace System
         {
             return
                 object.ReferenceEquals(value, this) ? 0 :
-                object.ReferenceEquals(value, null) ? 1 :
+                value is null ? 1 :
                 _Major != value._Major ? (_Major > value._Major ? 1 : -1) :
                 _Minor != value._Minor ? (_Minor > value._Minor ? 1 : -1) :
                 _Build != value._Build ? (_Build > value._Build ? 1 : -1) :
@@ -162,7 +163,7 @@ namespace System
                 0;
         }
 
-        public override bool Equals(Object obj)
+        public override bool Equals(object obj)
         {
             return Equals(obj as Version);
         }
@@ -170,7 +171,7 @@ namespace System
         public bool Equals(Version obj)
         {
             return object.ReferenceEquals(obj, this) ||
-                (!object.ReferenceEquals(obj, null) &&
+                (!(obj is null) &&
                 _Major == obj._Major &&
                 _Minor == obj._Minor &&
                 _Build == obj._Build &&
@@ -341,7 +342,7 @@ namespace System
                 if (buildEnd != -1)
                 {
                     buildEnd += (minorEnd + 1);
-                    if (input.Slice(buildEnd + 1).IndexOf('.') != -1)
+                    if (input.Slice(buildEnd + 1).Contains('.'))
                     {
                         if (throwOnFailure) throw new ArgumentException(SR.Arg_VersionString, nameof(input));
                         return null;
@@ -405,14 +406,20 @@ namespace System
             return int.TryParse(component, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsedComponent) && parsedComponent >= 0;
         }
 
+        // Force inline as the true/false ternary takes it above ALWAYS_INLINE size even though the asm ends up smaller
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator ==(Version v1, Version v2)
         {
-            if (Object.ReferenceEquals(v1, null))
+            // Test "right" first to allow branch elimination when inlined for null checks (== null)
+            // so it can become a simple test
+            if (v2 is null)
             {
-                return Object.ReferenceEquals(v2, null);
+                // return true/false not the test result https://github.com/dotnet/coreclr/issues/914
+                return (v1 is null) ? true : false;
             }
 
-            return v1.Equals(v2);
+            // Quick reference equality test prior to calling the virtual Equality
+            return ReferenceEquals(v2, v1) ? true : v2.Equals(v1);
         }
 
         public static bool operator !=(Version v1, Version v2)
@@ -422,14 +429,14 @@ namespace System
 
         public static bool operator <(Version v1, Version v2)
         {
-            if ((Object)v1 == null)
+            if ((object)v1 == null)
                 throw new ArgumentNullException(nameof(v1));
             return (v1.CompareTo(v2) < 0);
         }
 
         public static bool operator <=(Version v1, Version v2)
         {
-            if ((Object)v1 == null)
+            if ((object)v1 == null)
                 throw new ArgumentNullException(nameof(v1));
             return (v1.CompareTo(v2) <= 0);
         }

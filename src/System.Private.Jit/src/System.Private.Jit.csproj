@@ -1,4 +1,4 @@
-<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
+﻿<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
   <Import Project="$([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildThisFileDirectory), dir.props))\dir.props" />
   <PropertyGroup>
     <AssemblyName>System.Private.Jit</AssemblyName>
@@ -24,14 +24,13 @@
       <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
     </ProjectReference>
     <ReferencePath Include="$(AotPackageReferencePath)\System.Runtime.dll" />
-    <ReferencePath Include="$(AotPackageReferencePath)\System.Runtime.Extensions.dll" />
     <ReferencePath Include="$(AotPackageReferencePath)\System.Private.Reflection.Metadata.Ecma335.dll" />
     <ProjectReference Include="..\..\System.Private.CoreLib\src\System.Private.CoreLib.csproj">
       <Aliases>global,System_Private_CoreLib</Aliases>
     </ProjectReference>
     <ProjectReference Include="..\..\System.Private.Reflection.Metadata\src\System.Private.Reflection.Metadata.csproj" />
     <ProjectReference Include="..\..\System.Private.TypeLoader\src\System.Private.TypeLoader.Experimental.csproj" />
-    <ProjectReference Include="..\..\System.Private.Interop\src\System.Private.Interop.csproj" />
+    <ProjectReference Include="..\..\System.Private.Interop\src\System.Private.Interop.Experimental.csproj" />
   </ItemGroup>
   <PropertyGroup>
     <NativeFormatCommonPath>..\..\Common\src\Internal\NativeFormat</NativeFormatCommonPath>
@@ -39,10 +38,12 @@
     <TypeLoaderBasePath>..\..\System.Private.TypeLoader\src</TypeLoaderBasePath>
     <CommonBasePath>..\..\Common\src</CommonBasePath>
     <ILCompilerBasePath>..\..\ILCompiler.Compiler\src</ILCompilerBasePath>
+    <ILCompilerRyuJitBasePath>..\..\ILCompiler.RyuJit\src</ILCompilerRyuJitBasePath>
     <DependencyAnalysisFrameworkBasePath>..\..\ILCompiler.DependencyAnalysisFramework\src</DependencyAnalysisFrameworkBasePath>
     <JitInterfaceBasePath>..\..\JitInterface\src</JitInterfaceBasePath>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Internal\Runtime\CompilerHelpers\LibraryInitializer.cs" />
     <Compile Include="Internal\Runtime\JitSupport\ExternObjectSymbolNode.cs" />
     <Compile Include="Internal\Runtime\JitSupport\FrozenStrings.cs" />
     <Compile Include="Internal\Runtime\JitSupport\JitCompilation.cs" />
@@ -61,14 +62,15 @@
     <Compile Include="$(CommonBasePath)\Internal\Text\Utf8String.cs" />
     <Compile Include="$(CommonBasePath)\Internal\Text\Utf8StringBuilder.cs" />
     <Compile Include="$(CommonBasePath)\System\Collections\Generic\ArrayBuilder.cs" />
+    <Compile Include="$(TypeSystemBasePath)\IL\CoreRTILProvider.cs" />
     <Compile Include="$(TypeSystemBasePath)\IL\EcmaMethodIL.cs" />
     <Compile Include="$(TypeSystemBasePath)\IL\ILProvider.cs" />
-    <Compile Include="$(TypeSystemBasePath)\IL\McgInteropSupport.cs" />
     <Compile Include="$(TypeSystemBasePath)\IL\HelperExtensions.cs" />
     <Compile Include="$(TypeSystemBasePath)\IL\Stubs\AddrOfIntrinsic.cs" />
     <Compile Include="$(TypeSystemBasePath)\IL\Stubs\ArrayMethodILEmitter.cs" />
     <Compile Include="$(TypeSystemBasePath)\IL\Stubs\CalliIntrinsic.cs" />
     <Compile Include="$(TypeSystemBasePath)\IL\Stubs\ComparerIntrinsics.cs" />
+    <Compile Include="$(TypeSystemBasePath)\IL\Stubs\CalliMarshallingMethodThunk.cs" />
     <Compile Include="$(TypeSystemBasePath)\IL\Stubs\DelegateMarshallingMethodThunk.cs" />
     <Compile Include="$(TypeSystemBasePath)\IL\Stubs\ForwardDelegateCreationThunk.cs" />
     <Compile Include="$(TypeSystemBasePath)\IL\Stubs\EETypePtrOfIntrinsic.cs" />
@@ -82,6 +84,7 @@
     <Compile Include="$(TypeSystemBasePath)\IL\Stubs\UnsafeIntrinsics.cs" />
     <Compile Include="$(TypeSystemBasePath)\Interop\IL\Marshaller.cs" />
     <Compile Include="$(TypeSystemBasePath)\Interop\IL\MarshalHelpers.cs" />
+    <Compile Include="$(TypeSystemBasePath)\Interop\IL\MarshalUtils.cs" />
     <Compile Include="$(TypeSystemBasePath)\Interop\IL\NativeStructType.cs" />
     <Compile Include="$(TypeSystemBasePath)\Interop\IL\PInvokeDelegateWrapper.cs" />
     <Compile Include="$(TypeSystemBasePath)\Interop\IL\PInvokeDelegateWrapperConstructor.cs" />
@@ -116,7 +119,6 @@
     <Compile Include="$(ILCompilerBasePath)\Compiler\DependencyAnalysis\INodeWithCodeInfo.cs" />
     <Compile Include="$(ILCompilerBasePath)\Compiler\DependencyAnalysis\ISymbolNode.cs" />
     <Compile Include="$(ILCompilerBasePath)\Compiler\DependencyAnalysis\IMethodNode.cs" />
-    <Compile Include="$(ILCompilerBasePath)\Compiler\DependencyAnalysis\IMethodCodeNode.cs" />
     <Compile Include="$(ILCompilerBasePath)\Compiler\DependencyAnalysis\IEETypeNode.cs" />
     <Compile Include="$(ILCompilerBasePath)\Compiler\DependencyAnalysis\ObjectDataBuilder.cs" />
     <Compile Include="$(ILCompilerBasePath)\Compiler\DependencyAnalysis\BlobNode.cs" />
@@ -125,19 +127,21 @@
     <Compile Include="$(ILCompilerBasePath)\Compiler\DependencyAnalysis\ObjectNodeSection.cs" />
     <Compile Include="$(ILCompilerBasePath)\Compiler\DependencyAnalysis\ReadyToRunHelperNode.cs" />
     <Compile Include="$(ILCompilerBasePath)\Compiler\DependencyAnalysis\Relocation.cs" />
+    <Compile Include="$(ILCompilerBasePath)\Compiler\DependencyAnalysis\ISortableNode.cs" />
     <Compile Include="$(ILCompilerBasePath)\Compiler\DependencyAnalysis\SortableDependencyNode.cs" />
     <Compile Include="$(ILCompilerBasePath)\Compiler\DelegateCreationInfo.cs" />
     <Compile Include="$(ILCompilerBasePath)\Compiler\JitHelper.cs" />
     <Compile Include="$(ILCompilerBasePath)\Compiler\GenericDictionaryLookup.cs" />
     <Compile Include="$(ILCompilerBasePath)\Compiler\SimdHelper.cs" />
+    <Compile Include="$(ILCompilerBasePath)\Compiler\HardwareIntrinsicHelpers.cs" />
     <Compile Include="$(ILCompilerBasePath)\Compiler\MethodExtensions.cs" />
-    <Compile Include="$(ILCompilerBasePath)\Compiler\MemoryHelper.cs" />
     <Compile Include="$(ILCompilerBasePath)\Compiler\ReadyToRun.cs" />
     <Compile Include="$(ILCompilerBasePath)\Compiler\TypeExtensions.cs" />
     <Compile Include="$(ILCompilerBasePath)\Compiler\NameMangler.cs" />
     <Compile Include="$(ILCompilerBasePath)\Compiler\NodeMangler.cs" />
     <Compile Include="$(ILCompilerBasePath)\Compiler\DevirtualizationManager.cs" />
     <Compile Include="$(ILCompilerBasePath)\IL\Stubs\PInvokeILProvider.cs" />
+    <Compile Include="$(ILCompilerRyuJitBasePath)\JitInterface\CorInfoImpl.RyuJit.cs" />
     <Compile Include="$(DependencyAnalysisFrameworkBasePath)\IDependencyNode.cs" />
     <Compile Include="$(DependencyAnalysisFrameworkBasePath)\DependencyNode.cs" />
     <Compile Include="$(DependencyAnalysisFrameworkBasePath)\DependencyNodeCore.cs" />
@@ -146,7 +150,9 @@
     <Compile Include="$(JitInterfaceBasePath)\CorInfoImpl.cs" />
     <Compile Include="$(JitInterfaceBasePath)\CorInfoImpl.Intrinsics.cs" />
     <Compile Include="$(JitInterfaceBasePath)\CorInfoTypes.cs" />
+    <Compile Include="$(JitInterfaceBasePath)\CorInfoTypes.VarInfo.cs" />
     <Compile Include="$(JitInterfaceBasePath)\JitConfigProvider.cs" />
+    <Compile Include="$(JitInterfaceBasePath)\MemoryHelper.cs" />
     <Compile Include="$(JitInterfaceBasePath)\TypeString.cs" />
     <Compile Include="$(TypeLoaderBasePath)\Internal\TypeSystem\PInvokeTargetNativeMethod.Runtime.cs" />
     <Compile Include="Internal\Runtime\JitSupport\RyuJitExecutionStrategy.cs" />

@@ -22,15 +22,15 @@ namespace Internal.Runtime
 #pragma warning disable 0169
     internal struct ReadyToRunHeader
     {
-        private UInt32 Signature;      // ReadyToRunHeaderConstants.Signature
-        private UInt16 MajorVersion;
-        private UInt16 MinorVersion;
+        private uint Signature;      // ReadyToRunHeaderConstants.Signature
+        private ushort MajorVersion;
+        private ushort MinorVersion;
 
-        private UInt32 Flags;
+        private uint Flags;
 
-        private UInt16 NumberOfSections;
-        private Byte EntrySize;
-        private Byte EntryType;
+        private ushort NumberOfSections;
+        private byte EntrySize;
+        private byte EntryType;
 
         // Array of sections follows.
     };
@@ -41,11 +41,30 @@ namespace Internal.Runtime
     // from each module linked into the final binary. New sections should be added at the bottom
     // of the enum and deprecated sections should not be removed to preserve ID stability.
     //
-    // Eventually this will be reconciled with ReadyToRunSectionType from 
+    // This list should be kept in sync with the runtime version at
     // https://github.com/dotnet/coreclr/blob/master/src/inc/readytorun.h
     //
     public enum ReadyToRunSectionType
     {
+        //
+        // CoreCLR ReadyToRun sections
+        //
+        CompilerIdentifier = 100,
+        ImportSections = 101,
+        RuntimeFunctions = 102,
+        MethodDefEntryPoints = 103,
+        ExceptionInfo = 104,
+        DebugInfo = 105,
+        DelayLoadMethodCallThunks = 106,
+        // 107 is deprecated - it was used by an older format of AvailableTypes
+        AvailableTypes = 108,
+        InstanceMethodEntryPoints = 109,
+        InliningInfo = 110, // Added in v2.1
+        ProfileDataInfo = 111, // Added in v2.2
+
+        //
+        // CoreRT ReadyToRun sections
+        //
         StringTable = 200, // Unused
         GCStaticRegion = 201,
         ThreadStaticRegion = 202,

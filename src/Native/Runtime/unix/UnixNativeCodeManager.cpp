@@ -41,8 +41,10 @@ struct UnixNativeMethodInfo
 static_assert(sizeof(UnixNativeMethodInfo) <= sizeof(MethodInfo), "UnixNativeMethodInfo too big");
 
 UnixNativeCodeManager::UnixNativeCodeManager(TADDR moduleBase, 
+                                             PTR_VOID pvManagedCodeStartRange, UInt32 cbManagedCodeRange,
                                              PTR_PTR_VOID pClasslibFunctions, UInt32 nClasslibFunctions)
     : m_moduleBase(moduleBase), 
+      m_pvManagedCodeStartRange(pvManagedCodeStartRange), m_cbManagedCodeRange(cbManagedCodeRange),
       m_pClasslibFunctions(pClasslibFunctions), m_nClasslibFunctions(nClasslibFunctions)
 {
 }
@@ -54,6 +56,13 @@ UnixNativeCodeManager::~UnixNativeCodeManager()
 bool UnixNativeCodeManager::FindMethodInfo(PTR_VOID        ControlPC, 
                                            MethodInfo *    pMethodInfoOut)
 {
+    // Stackwalker may call this with ControlPC that does not belong to this code manager
+    if (dac_cast<TADDR>(ControlPC) < dac_cast<TADDR>(m_pvManagedCodeStartRange) ||
+        dac_cast<TADDR>(m_pvManagedCodeStartRange) + m_cbManagedCodeRange <= dac_cast<TADDR>(ControlPC))
+    {
+        return false;
+    }
+
     UnixNativeMethodInfo * pMethodInfo = (UnixNativeMethodInfo *)pMethodInfoOut;
     UIntNative startAddress;
     UIntNative lsda;
@@ -136,7 +145,7 @@ void UnixNativeCodeManager::EnumGcRefs(MethodInfo *    pMethodInfo,
     if ((unwindBlockFlags & UBF_FUNC_HAS_EHINFO) != 0)
         p += sizeof(int32_t);
 
-    UInt32 codeOffset = (UInt32)(dac_cast<TADDR>(safePointAddress) - dac_cast<TADDR>(pNativeMethodInfo->pMethodStartAddress));
+    UInt32 codeOffset = (UInt32)(PINSTRToPCODE(dac_cast<TADDR>(safePointAddress)) - PINSTRToPCODE(dac_cast<TADDR>(pNativeMethodInfo->pMethodStartAddress)));
 
     GcInfoDecoder decoder(
         GCInfoToken(p),
@@ -323,7 +332,7 @@ bool UnixNativeCodeManager::EHEnumNext(EHEnumState * pEHEnumState, EHClause * pE
     switch (pEHClauseOut->m_clauseKind)
     {
     case EH_CLAUSE_TYPED:
-        pEHClauseOut->m_handlerAddress = pEnumState->pMethodStartAddress + VarInt::ReadUnsigned(pEnumState->pEHInfo);
+        pEHClauseOut->m_handlerAddress = dac_cast<UInt8*>(PINSTRToPCODE(dac_cast<TADDR>(pEnumState->pMethodStartAddress))) + VarInt::ReadUnsigned(pEnumState->pEHInfo);
 
         // Read target type
         {
@@ -334,11 +343,11 @@ bool UnixNativeCodeManager::EHEnumNext(EHEnumState * pEHEnumState, EHClause * pE
         }
         break;
     case EH_CLAUSE_FAULT:
-        pEHClauseOut->m_handlerAddress = pEnumState->pMethodStartAddress + VarInt::ReadUnsigned(pEnumState->pEHInfo);
+        pEHClauseOut->m_handlerAddress = dac_cast<UInt8*>(PINSTRToPCODE(dac_cast<TADDR>(pEnumState->pMethodStartAddress))) + VarInt::ReadUnsigned(pEnumState->pEHInfo);
         break;
     case EH_CLAUSE_FILTER:
-        pEHClauseOut->m_handlerAddress = pEnumState->pMethodStartAddress + VarInt::ReadUnsigned(pEnumState->pEHInfo);
-        pEHClauseOut->m_filterAddress = pEnumState->pMethodStartAddress + VarInt::ReadUnsigned(pEnumState->pEHInfo);
+        pEHClauseOut->m_handlerAddress = dac_cast<UInt8*>(PINSTRToPCODE(dac_cast<TADDR>(pEnumState->pMethodStartAddress))) + VarInt::ReadUnsigned(pEnumState->pEHInfo);
+        pEHClauseOut->m_filterAddress = dac_cast<UInt8*>(PINSTRToPCODE(dac_cast<TADDR>(pEnumState->pMethodStartAddress))) + VarInt::ReadUnsigned(pEnumState->pEHInfo);
         break;
     default:
         UNREACHABLE_MSG("unexpected EHClauseKind");
@@ -396,6 +405,7 @@ bool RhRegisterOSModule(void * pModule,
                         void ** pClasslibFunctions, UInt32 nClasslibFunctions)
 {
     NewHolder<UnixNativeCodeManager> pUnixNativeCodeManager = new (nothrow) UnixNativeCodeManager((TADDR)pModule,
+        pvManagedCodeStartRange, cbManagedCodeRange,
         pClasslibFunctions, nClasslibFunctions);
 
     if (pUnixNativeCodeManager == nullptr)

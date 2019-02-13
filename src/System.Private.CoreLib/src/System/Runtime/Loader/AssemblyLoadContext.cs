@@ -34,6 +34,14 @@ namespace System.Runtime.Loader
         {
             throw new PlatformNotSupportedException();
         }
+
+        public void SetProfileOptimizationRoot(string directoryPath) { }
+        public void StartProfileOptimization(string profile) { }
+
+        internal static void OnProcessExit()
+        {
+            Default.Unloading?.Invoke(Default);
+        }
     }
 
     /// <summary>

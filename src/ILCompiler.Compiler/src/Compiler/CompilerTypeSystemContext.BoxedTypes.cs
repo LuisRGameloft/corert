@@ -107,20 +107,20 @@ namespace ILCompiler
             UnboxingThunk thunkDefinition = _nonGenericUnboxingThunkHashtable.GetOrCreateValue(methodKey);
 
             // Find the thunk on the instantiated version of the reference type.
+            MethodDesc thunk;
             if (owningType != owningTypeDefinition)
             {
                 InstantiatedType boxedType = boxedTypeDefinition.MakeInstantiatedType(owningType.Instantiation);
-                MethodDesc thunk = GetMethodForInstantiatedType(thunkDefinition, boxedType);
-                //TODO: this might be triggered by a struct that implements an interface with a generic method
-                Debug.Assert(!thunk.HasInstantiation);
-                return thunk;
+                thunk = GetMethodForInstantiatedType(thunkDefinition, boxedType);
             }
             else
             {
-                //TODO: this might be triggered by a struct that implements an interface with a generic method
-                Debug.Assert(!thunkDefinition.HasInstantiation);
-                return thunkDefinition;
+                thunk = thunkDefinition;
             }
+            if (thunk.HasInstantiation)
+                thunk = thunk.MakeInstantiatedMethod(targetMethod.Instantiation);
+
+            return thunk;
         }
 
         /// <summary>
@@ -290,7 +290,17 @@ namespace ILCompiler
 
                 Module = owningModule;
                 ValueTypeRepresented = valuetype;
-                BoxedValue = new BoxedValueField(this);
+
+                // Unboxing thunks for byref-like types don't make sense. Byref-like types cannot be boxed.
+                // We still allow these to exist in the system, because it's easier than trying to prevent
+                // their creation. We create them as if they existed (in lieu of e.g. pointing all of them
+                // to the same __unreachable method body) so that the various places that store pointers to
+                // them because they want to be able to extract the target instance method can use the same
+                // mechanism they use for everything else at runtime.
+                // The main difference is that the "Boxed_ValueType" version has no fields. Reference types
+                // cannot have byref-like fields.
+                if (!valuetype.IsByRefLike)
+                    BoxedValue = new BoxedValueField(this);
             }
 
             public override ClassLayoutMetadata GetClassLayout() => default(ClassLayoutMetadata);
@@ -332,7 +342,7 @@ namespace ILCompiler
 
             public override FieldDesc GetField(string name)
             {
-                if (name == BoxedValueFieldName)
+                if (name == BoxedValueFieldName && BoxedValue != null)
                     return BoxedValue;
 
                 return null;
@@ -340,7 +350,10 @@ namespace ILCompiler
 
             public override IEnumerable<FieldDesc> GetFields()
             {
-                yield return BoxedValue;
+                if (BoxedValue != null)
+                    return new FieldDesc[] { BoxedValue };
+
+                return Array.Empty<FieldDesc>();
             }
 
             /// <summary>
@@ -439,6 +452,15 @@ namespace ILCompiler
 
             public override MethodIL EmitIL()
             {
+                if (_owningType.BoxedValue == null)
+                {
+                    // If this is the fake unboxing thunk for ByRef-like types, just make a method that throws.
+                    return new ILStubMethodIL(this,
+                        new byte[] { (byte)ILOpcode.ldnull, (byte)ILOpcode.throw_ },
+                        Array.Empty<LocalVariableDefinition>(),
+                        Array.Empty<object>());
+                }
+
                 // Generate the unboxing stub. This loosely corresponds to following C#:
                 // return BoxedValue.InstanceMethod(this.m_pEEType, [rest of parameters])
 
@@ -507,6 +529,15 @@ namespace ILCompiler
 
             public override MethodIL EmitIL()
             {
+                if (_owningType.BoxedValue == null)
+                {
+                    // If this is the fake unboxing thunk for ByRef-like types, just make a method that throws.
+                    return new ILStubMethodIL(this,
+                        new byte[] { (byte)ILOpcode.ldnull, (byte)ILOpcode.throw_ },
+                        Array.Empty<LocalVariableDefinition>(),
+                        Array.Empty<object>());
+                }
+
                 // Generate the unboxing stub. This loosely corresponds to following C#:
                 // return BoxedValue.InstanceMethod([rest of parameters])
 
@@ -525,12 +556,33 @@ namespace ILCompiler
                     codeStream.EmitLdArg(i + 1);
                 }
 
-                // Call an instance method on the target valuetype
-                codeStream.Emit(ILOpcode.call, emit.NewToken(_targetMethod.InstantiateAsOpen()));
+                TypeDesc owner = _targetMethod.OwningType;
+                MethodDesc methodToInstantiate = _targetMethod;
+                if (owner.HasInstantiation)
+                {
+                    MetadataType instantiatedOwner = (MetadataType)owner.InstantiateAsOpen();
+                    methodToInstantiate = _targetMethod.Context.GetMethodForInstantiatedType(_targetMethod, (InstantiatedType)instantiatedOwner);
+                }
+                if (methodToInstantiate.HasInstantiation)
+                {
+                    TypeSystemContext context = methodToInstantiate.Context;
+
+                    var inst = new TypeDesc[methodToInstantiate.Instantiation.Length];
+                    for (int i = 0; i < inst.Length; i++)
+                    {
+                        inst[i] = context.GetSignatureVariable(i, true);
+                    }
+
+                    methodToInstantiate = context.GetInstantiatedMethod(methodToInstantiate, new Instantiation(inst));
+                }
+
+                codeStream.Emit(ILOpcode.call, emit.NewToken(methodToInstantiate));
                 codeStream.Emit(ILOpcode.ret);
 
                 return emit.Link(this);
             }
+
+            public override Instantiation Instantiation => _targetMethod.Instantiation;
         }
 
         /// <summary>

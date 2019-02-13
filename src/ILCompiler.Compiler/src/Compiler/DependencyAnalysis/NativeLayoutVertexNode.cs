@@ -982,7 +982,7 @@ namespace ILCompiler.DependencyAnalysis
                     yield return new DependencyListEntry(GetStaticsNode(context, out ignored), "type gc static info");
                 }
 
-                if (_type.GetClosestDefType().ThreadStaticFieldSize.AsInt > 0)
+                if (_type.GetClosestDefType().ThreadGcStaticFieldSize.AsInt > 0)
                 {
                     BagElementKind ignored;
                     yield return new DependencyListEntry(GetThreadStaticsNode(context, out ignored), "type thread static info");
@@ -1069,7 +1069,7 @@ namespace ILCompiler.DependencyAnalysis
                             if (vtableSignatureNodeEntries == null)
                                 vtableSignatureNodeEntries = new List<NativeLayoutVertexNode>();
 
-                            vtableSignatureNodeEntries.Add(context.NativeLayout.MethodSignatureVertex(implMethod.GetTypicalMethodDefinition().Signature));
+                            vtableSignatureNodeEntries.Add(context.NativeLayout.MethodSignatureVertex(declMethod.GetTypicalMethodDefinition().Signature));
                         }
                     }
                     , _type, _type, _type);
@@ -1107,7 +1107,7 @@ namespace ILCompiler.DependencyAnalysis
                                 conditionalDependencies = new List<CombinedDependencyListEntry>();
 
                             conditionalDependencies.Add(
-                                new CombinedDependencyListEntry(context.NativeLayout.MethodSignatureVertex(implMethod.GetTypicalMethodDefinition().Signature),
+                                new CombinedDependencyListEntry(context.NativeLayout.MethodSignatureVertex(declMethod.GetTypicalMethodDefinition().Signature),
                                                                 context.VirtualMethodUse(declMethod),
                                                                 "conditional vtable cctor sig"));
                         }
@@ -1201,9 +1201,9 @@ namespace ILCompiler.DependencyAnalysis
                     layoutInfo.AppendUnsigned(staticDescBagType, gcStaticsSymbolIndex);
                 }
 
-                if (closestDefType.ThreadStaticFieldSize.AsInt != 0)
+                if (closestDefType.ThreadGcStaticFieldSize.AsInt != 0)
                 {
-                    layoutInfo.AppendUnsigned(BagElementKind.ThreadStaticDataSize, checked((uint)closestDefType.ThreadStaticFieldSize.AsInt));
+                    layoutInfo.AppendUnsigned(BagElementKind.ThreadStaticDataSize, checked((uint)closestDefType.ThreadGcStaticFieldSize.AsInt));
                     BagElementKind threadStaticDescBagType;
                     ISymbolNode threadStaticsDescSymbol = GetThreadStaticsNode(factory, out threadStaticDescBagType);
                     uint threadStaticsSymbolIndex = factory.MetadataManager.NativeLayoutInfo.StaticsReferences.GetIndex(threadStaticsDescSymbol);
@@ -1339,7 +1339,7 @@ namespace ILCompiler.DependencyAnalysis
                             if (vtableSignaturesSequence == null)
                                 vtableSignaturesSequence = new VertexSequence();
 
-                            NativeLayoutVertexNode methodSignature = factory.NativeLayout.MethodSignatureVertex(implMethod.GetTypicalMethodDefinition().Signature);
+                            NativeLayoutVertexNode methodSignature = factory.NativeLayout.MethodSignatureVertex(declMethod.GetTypicalMethodDefinition().Signature);
                             Vertex signatureVertex = GetNativeWriter(factory).GetRelativeOffsetSignature(methodSignature.WriteVertex(factory));
 
                             Vertex vtableSignatureEntry = writer.GetTuple(
@@ -1465,6 +1465,7 @@ namespace ILCompiler.DependencyAnalysis
                 currentVTableIndex++;
 
             int sealedVTableSlot = 0;
+            DefType closestDefType = implType.GetClosestDefType();
 
             // Actual vtable slots follow
             foreach (MethodDesc declMethod in vtableEntriesToProcess)
@@ -1472,13 +1473,13 @@ namespace ILCompiler.DependencyAnalysis
                 // No generic virtual methods can appear in the vtable!
                 Debug.Assert(!declMethod.HasInstantiation);
 
-                MethodDesc implMethod = implType.GetClosestDefType().FindVirtualFunctionTargetMethodOnObjectType(declMethod);
+                MethodDesc implMethod = closestDefType.FindVirtualFunctionTargetMethodOnObjectType(declMethod);
 
                 if (implMethod.CanMethodBeInSealedVTable() && !implType.IsArrayTypeWithoutGenericInterfaces())
                 {
                     // Sealed vtable entries on other types in the hierarchy should not be reported (types read entries
                     // from their own sealed vtables, and not from the sealed vtables of base types).
-                    if (implMethod.OwningType == implType)
+                    if (implMethod.OwningType == closestDefType)
                         operation(sealedVTableSlot++, true, declMethod, implMethod);
                 }
                 else

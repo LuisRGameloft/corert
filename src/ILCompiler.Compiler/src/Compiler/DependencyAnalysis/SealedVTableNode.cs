@@ -90,35 +90,48 @@ namespace ILCompiler.DependencyAnalysis
 
             _sealedVTableEntries = new List<MethodDesc>();
 
-            // Cpp codegen does not support sealed vtables
-            if (factory.IsCppCodegenTemporaryWorkaround)
-                return true;
-
             IReadOnlyList<MethodDesc> virtualSlots = factory.VTable(declType).Slots;
 
             for (int i = 0; i < virtualSlots.Count; i++)
             {
-                MethodDesc implMethod = _type.GetClosestDefType().FindVirtualFunctionTargetMethodOnObjectType(virtualSlots[i]);
+                MethodDesc implMethod = declType.FindVirtualFunctionTargetMethodOnObjectType(virtualSlots[i]);
 
                 if (implMethod.CanMethodBeInSealedVTable())
                     _sealedVTableEntries.Add(implMethod);
             }
 
-            for (int interfaceIndex = 0; interfaceIndex < _type.RuntimeInterfaces.Length; interfaceIndex++)
+            // Catch any runtime interface collapsing. We shouldn't have any
+            Debug.Assert(declType.RuntimeInterfaces.Length == declType.GetTypeDefinition().RuntimeInterfaces.Length);
+
+            for (int interfaceIndex = 0; interfaceIndex < declType.RuntimeInterfaces.Length; interfaceIndex++)
             {
-                var interfaceType = _type.RuntimeInterfaces[interfaceIndex];
+                var interfaceType = declType.RuntimeInterfaces[interfaceIndex];
+                var interfaceDefinitionType = declType.GetTypeDefinition().RuntimeInterfaces[interfaceIndex];
 
                 virtualSlots = factory.VTable(interfaceType).Slots;
 
                 for (int interfaceMethodSlot = 0; interfaceMethodSlot < virtualSlots.Count; interfaceMethodSlot++)
                 {
                     MethodDesc declMethod = virtualSlots[interfaceMethodSlot];
-                    var implMethod = _type.GetClosestDefType().ResolveInterfaceMethodToVirtualMethodOnType(declMethod);
+                    if (!interfaceType.IsTypeDefinition)
+                        declMethod = factory.TypeSystemContext.GetMethodForInstantiatedType(declMethod.GetTypicalMethodDefinition(), (InstantiatedType)interfaceDefinitionType);
+
+                    var implMethod = declType.GetTypeDefinition().ResolveInterfaceMethodToVirtualMethodOnType(declMethod);
 
                     // Interface methods first implemented by a base type in the hierarchy will return null for the implMethod (runtime interface
                     // dispatch will walk the inheritance chain).
-                    if (implMethod != null && implMethod.CanMethodBeInSealedVTable() && implMethod.OwningType != _type)
-                        _sealedVTableEntries.Add(implMethod);
+                    if (implMethod != null && implMethod.CanMethodBeInSealedVTable() && !implMethod.OwningType.HasSameTypeDefinition(declType))
+                    {
+                        TypeDesc implType = declType;
+                        while (!implType.HasSameTypeDefinition(implMethod.OwningType))
+                            implType = implType.BaseType;
+
+                        MethodDesc targetMethod = implMethod;
+                        if (!implType.IsTypeDefinition)
+                            targetMethod = factory.TypeSystemContext.GetMethodForInstantiatedType(implMethod.GetTypicalMethodDefinition(), (InstantiatedType)implType);
+
+                        _sealedVTableEntries.Add(targetMethod);
+                    }
                 }
             }
 
@@ -136,15 +149,20 @@ namespace ILCompiler.DependencyAnalysis
                 for (int i = 0; i < _sealedVTableEntries.Count; i++)
                 {
                     MethodDesc canonImplMethod = _sealedVTableEntries[i].GetCanonMethodTarget(CanonicalFormKind.Specific);
-                    objData.EmitReloc(factory.MethodEntrypoint(canonImplMethod, _sealedVTableEntries[i].OwningType.IsValueType), RelocType.IMAGE_REL_BASED_RELPTR32);
+                    IMethodNode relocTarget = factory.MethodEntrypoint(canonImplMethod, _sealedVTableEntries[i].OwningType.IsValueType);
+
+                    if (factory.Target.SupportsRelativePointers)
+                        objData.EmitReloc(relocTarget, RelocType.IMAGE_REL_BASED_RELPTR32);
+                    else
+                        objData.EmitPointerReloc(relocTarget);
                 }
             }
 
             return objData.ToObjectData();
         }
 
-        protected internal override int ClassCode => 1632890252;
-        protected internal override int CompareToImpl(SortableDependencyNode other, CompilerComparer comparer)
+        public override int ClassCode => 1632890252;
+        public override int CompareToImpl(ISortableNode other, CompilerComparer comparer)
         {
             return comparer.Compare(_type, ((SealedVTableNode)other)._type);
         }

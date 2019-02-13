@@ -18,9 +18,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 
-// Disable the "reference to volatile field not treated as volatile" error.
-#pragma warning disable 0420
-
 namespace System.Threading.Tasks
 {
     /// <summary>
@@ -315,7 +312,7 @@ namespace System.Threading.Tasks
         /// <exception cref="T:System.ObjectDisposedException">The <see cref="Task"/> was disposed.</exception>
         public bool TrySetCanceled()
         {
-            return TrySetCanceled(default(CancellationToken));
+            return TrySetCanceled(default);
         }
 
         // Enables a token to be stored into the canceled task

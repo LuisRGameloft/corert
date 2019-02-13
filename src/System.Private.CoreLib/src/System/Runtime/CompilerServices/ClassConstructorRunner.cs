@@ -50,7 +50,7 @@ namespace System.Runtime.CompilerServices
             return nonGcStaticBase;
         }
 
-        private unsafe static object CheckStaticClassConstructionReturnThreadStaticBase(TypeManagerSlot* pModuleData, Int32 typeTlsIndex, StaticClassConstructionContext* context)
+        private unsafe static object CheckStaticClassConstructionReturnThreadStaticBase(TypeManagerSlot* pModuleData, int typeTlsIndex, StaticClassConstructionContext* context)
         {
             object threadStaticBase = ThreadStatics.GetThreadStaticBaseForType(pModuleData, typeTlsIndex);
             EnsureClassConstructorRun(context);
@@ -94,7 +94,7 @@ namespace System.Runtime.CompilerServices
                             {
                                 NoisyLog("Calling cctor, cctor={0}, thread={1}", pfnCctor, currentManagedThreadId);
 
-                                Call<int>(pfnCctor);
+                                Call(pfnCctor);
 
                                 // Insert a memory barrier here to order any writes executed as part of static class
                                 // construction above with respect to the initialized flag update we're about to make
@@ -555,7 +555,7 @@ namespace System.Runtime.CompilerServices
             string str;
             fixed (char* p = &chars[i])
             {
-                str = new String(p, 0, numChars - i);
+                str = new string(p, 0, numChars - i);
             }
             return str;
         }

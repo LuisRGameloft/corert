@@ -162,6 +162,24 @@ namespace System.Reflection.Runtime.General
             return customModifiers.ToArray();
         }
 
+        public static Handle SkipCustomModifiers(this Handle handle, MetadataReader reader)
+        {
+            HandleType handleType = handle.HandleType;
+            Debug.Assert(handleType == HandleType.TypeDefinition || handleType == HandleType.TypeReference || handleType == HandleType.TypeSpecification || handleType == HandleType.ModifiedType);
+            if (handleType != HandleType.ModifiedType)
+                return handle;
+
+            do
+            {
+                ModifiedType modifiedType = handle.ToModifiedTypeHandle(reader).GetModifiedType(reader);
+                handle = modifiedType.Type;
+                handleType = handle.HandleType;
+            }
+            while (handleType == HandleType.ModifiedType);
+
+            return handle;
+        }
+
         public static MethodSignature ParseMethodSignature(this Handle handle, MetadataReader reader)
         {
             return handle.ToMethodSignatureHandle(reader).GetMethodSignature(reader);
@@ -519,7 +537,7 @@ namespace System.Reflection.Runtime.General
         //
         // This check performs without instantating the Type object and bloating memory usage. On the flip side,
         // it doesn't check on whether the type is defined in a paricular assembly. The desktop CLR typically doesn't
-        // check this either so this is useful from a compat persective as well.
+        // check this either so this is useful from a compat perspective as well.
         //
         public static bool IsCustomAttributeOfType(this CustomAttributeHandle customAttributeHandle,
                                                    MetadataReader reader,

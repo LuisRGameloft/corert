@@ -32,10 +32,9 @@ namespace System.Globalization
             this.String = value;
         }
 
-        public override bool Equals(Object value)
+        public override bool Equals(object value)
         {
-            StringInfo that = value as StringInfo;
-            if (that != null)
+            if (value is StringInfo that)
             {
                 return (_str.Equals(that._str));
             }
@@ -266,7 +265,7 @@ namespace System.Globalization
             {
                 if (index == len)
                 {
-                    return (String.Empty);
+                    return (string.Empty);
                 }
                 throw new ArgumentOutOfRangeException(nameof(index), SR.ArgumentOutOfRange_Index);
             }
@@ -341,7 +340,7 @@ namespace System.Globalization
             if (resultCount < len)
             {
                 int[] returnArray = new int[resultCount];
-                Array.Copy(result, returnArray, resultCount);
+                Array.Copy(result, 0, returnArray, 0, resultCount);
                 return (returnArray);
             }
             return (result);

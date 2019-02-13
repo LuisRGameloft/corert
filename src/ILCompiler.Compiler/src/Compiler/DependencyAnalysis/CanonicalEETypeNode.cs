@@ -19,15 +19,14 @@ namespace ILCompiler.DependencyAnalysis
     /// Similarly, the dependencies that we track for canonicl type instantiations are minimal, and are just the ones used
     /// by the dynamic type loader
     /// </summary>
-    internal sealed class CanonicalEETypeNode : EETypeNode
+    public sealed class CanonicalEETypeNode : EETypeNode
     {
         public CanonicalEETypeNode(NodeFactory factory, TypeDesc type) : base(factory, type)
         {
             Debug.Assert(!type.IsCanonicalDefinitionType(CanonicalFormKind.Any));
             Debug.Assert(type.IsCanonicalSubtype(CanonicalFormKind.Any));
             Debug.Assert(type == type.ConvertToCanonForm(CanonicalFormKind.Specific));
-            Debug.Assert(!type.IsMdArray);
-            Debug.Assert(!type.IsByRefLike);
+            Debug.Assert(!type.IsMdArray || factory.Target.Abi == TargetAbi.CppCodegen);
         }
 
         public override bool StaticDependenciesAreComputed => true;
@@ -60,6 +59,15 @@ namespace ILCompiler.DependencyAnalysis
                 dependencyList.Add(new DependencyListEntry(factory.TypeGVMEntries(_type), "Type with generic virtual methods"));
 
                 AddDependenciesForUniversalGVMSupport(factory, _type, ref dependencyList);
+            }
+
+            // Keep track of the default constructor map dependency for this type if it has a default constructor
+            MethodDesc defaultCtor = closestDefType.GetDefaultConstructor();
+            if (defaultCtor != null)
+            {
+                dependencyList.Add(new DependencyListEntry(
+                    factory.MethodEntrypoint(defaultCtor, closestDefType.IsValueType),
+                    "DefaultConstructorNode"));
             }
 
             return dependencyList;
@@ -136,6 +144,6 @@ namespace ILCompiler.DependencyAnalysis
             base.ComputeValueTypeFieldPadding();
         }
 
-        protected internal override int ClassCode => -1798018602;
+        public override int ClassCode => -1798018602;
     }
 }

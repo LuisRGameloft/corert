@@ -150,11 +150,7 @@ namespace System.IO
 
             if (value > _capacity)
             {
-                int newCapacity = value;
-                if (newCapacity < 256)
-                {
-                    newCapacity = 256;
-                }
+                int newCapacity = Math.Max(value, 256);
 
                 // We are ok with this overflowing since the next statement will deal
                 // with the cases where _capacity*2 overflows.
@@ -167,7 +163,7 @@ namespace System.IO
                 // And we want to give the user the value that they asked for
                 if ((uint)(_capacity * 2) > Array.MaxByteArrayLength)
                 {
-                    newCapacity = value > Array.MaxByteArrayLength ? value : Array.MaxByteArrayLength;
+                    newCapacity = Math.Max(value, Array.MaxByteArrayLength);
                 }
 
                 Capacity = newCapacity;
@@ -208,7 +204,7 @@ namespace System.IO
         {
             if (!_exposable)
             {
-                buffer = default(ArraySegment<byte>);
+                buffer = default;
                 return false;
             }
 
@@ -230,18 +226,24 @@ namespace System.IO
             return _position;
         }
 
-        // PERF: Takes out Int32 as fast as possible
-        internal int InternalReadInt32()
+        // PERF: Expose internal buffer for BinaryReader instead of going via the regular Stream interface which requires to copy the data out
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal ReadOnlySpan<byte> InternalReadSpan(int count)
         {
             EnsureNotClosed();
 
-            int pos = (_position += 4); // use temp to avoid a race condition
-            if (pos > _length)
+            int origPos = _position;
+            int newPos = origPos + count;
+            
+            if ((uint)newPos > (uint)_length)
             {
                 _position = _length;
                 throw Error.GetEndOfFile();
             }
-            return (int)(_buffer[pos - 4] | _buffer[pos - 3] << 8 | _buffer[pos - 2] << 16 | _buffer[pos - 1] << 24);
+
+            var span = new ReadOnlySpan<byte>(_buffer, origPos, count);
+            _position = newPos;
+            return span;
         }
 
         // PERF: Get actual length of bytes available for read; do sanity checks; shift position - i.e. everything except actual copying bytes
@@ -367,19 +369,19 @@ namespace System.IO
             return n;
         }
 
-        public override int Read(Span<byte> destination)
+        public override int Read(Span<byte> buffer)
         {
             if (GetType() != typeof(MemoryStream))
             {
                 // MemoryStream is not sealed, and a derived type may have overridden Read(byte[], int, int) prior
                 // to this Read(Span<byte>) overload being introduced.  In that case, this Read(Span<byte>) overload
                 // should use the behavior of Read(byte[],int,int) overload.
-                return base.Read(destination);
+                return base.Read(buffer);
             }
 
             EnsureNotClosed();
 
-            int n = Math.Min(_length - _position, destination.Length);
+            int n = Math.Min(_length - _position, buffer.Length);
             if (n <= 0)
                 return 0;
 
@@ -387,13 +389,13 @@ namespace System.IO
             // Read(byte[], int, int) has an n <= 8 optimization, presumably based
             // on benchmarking.  Determine if/where such a cut-off is here and add
             // an equivalent optimization if necessary.
-            new Span<byte>(_buffer, _position, n).CopyTo(destination);
+            new Span<byte>(_buffer, _position, n).CopyTo(buffer);
 
             _position += n;
             return n;
         }
 
-        public override Task<int> ReadAsync(Byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
         {
             if (buffer == null)
                 throw new ArgumentNullException(nameof(buffer), SR.ArgumentNull_Buffer);
@@ -418,7 +420,7 @@ namespace System.IO
             }
             catch (OperationCanceledException oce)
             {
-                return Task.FromCancellation<int>(oce);
+                return Task.FromCanceled<int>(oce);
             }
             catch (Exception exception)
             {
@@ -426,7 +428,7 @@ namespace System.IO
             }
         }
 
-        public override ValueTask<int> ReadAsync(Memory<byte> destination, CancellationToken cancellationToken = default(CancellationToken))
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
         {
             if (cancellationToken.IsCancellationRequested)
             {
@@ -448,13 +450,13 @@ namespace System.IO
                 // something other than an array and this is a MemoryStream-derived type that doesn't override Read(Span<byte>) will
                 // it then fall back to doing the ArrayPool/copy behavior.
                 return new ValueTask<int>(
-                    MemoryMarshal.TryGetArray(destination, out ArraySegment<byte> destinationArray) ?
+                    MemoryMarshal.TryGetArray(buffer, out ArraySegment<byte> destinationArray) ?
                         Read(destinationArray.Array, destinationArray.Offset, destinationArray.Count) :
-                        Read(destination.Span));
+                        Read(buffer.Span));
             }
             catch (OperationCanceledException oce)
             {
-                return new ValueTask<int>(Task.FromCancellation<int>(oce));
+                return new ValueTask<int>(Task.FromCanceled<int>(oce));
             }
             catch (Exception exception)
             {
@@ -531,8 +533,7 @@ namespace System.IO
                 return Task.CompletedTask;
 
             // If destination is not a memory stream, write there asynchronously:
-            MemoryStream memStrDest = destination as MemoryStream;
-            if (memStrDest == null)
+            if (!(destination is MemoryStream memStrDest))
                 return destination.WriteAsync(_buffer, pos, n, cancellationToken);
 
             try
@@ -681,14 +682,14 @@ namespace System.IO
             _position = i;
         }
 
-        public override void Write(ReadOnlySpan<byte> source)
+        public override void Write(ReadOnlySpan<byte> buffer)
         {
             if (GetType() != typeof(MemoryStream))
             {
                 // MemoryStream is not sealed, and a derived type may have overridden Write(byte[], int, int) prior
                 // to this Write(Span<byte>) overload being introduced.  In that case, this Write(Span<byte>) overload
                 // should use the behavior of Write(byte[],int,int) overload.
-                base.Write(source);
+                base.Write(buffer);
                 return;
             }
 
@@ -696,7 +697,7 @@ namespace System.IO
             EnsureWriteable();
 
             // Check for overflow
-            int i = _position + source.Length;
+            int i = _position + buffer.Length;
             if (i < 0)
                 throw new IOException(SR.IO_StreamTooLong);
 
@@ -718,11 +719,11 @@ namespace System.IO
                 _length = i;
             }
 
-            source.CopyTo(new Span<byte>(_buffer, _position, source.Length));
+            buffer.CopyTo(new Span<byte>(_buffer, _position, buffer.Length));
             _position = i;
         }
 
-        public override Task WriteAsync(Byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
         {
             if (buffer == null)
                 throw new ArgumentNullException(nameof(buffer), SR.ArgumentNull_Buffer);
@@ -744,7 +745,7 @@ namespace System.IO
             }
             catch (OperationCanceledException oce)
             {
-                return Task.FromCancellation<VoidTaskResult>(oce);
+                return Task.FromCanceled(oce);
             }
             catch (Exception exception)
             {
@@ -752,7 +753,7 @@ namespace System.IO
             }
         }
 
-        public override ValueTask WriteAsync(ReadOnlyMemory<byte> source, CancellationToken cancellationToken = default(CancellationToken))
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
         {
             if (cancellationToken.IsCancellationRequested)
             {
@@ -763,19 +764,19 @@ namespace System.IO
             {
                 // See corresponding comment in ReadAsync for why we don't just always use Write(ReadOnlySpan<byte>).
                 // Unlike ReadAsync, we could delegate to WriteAsync(byte[], ...) here, but we don't for consistency.
-                if (MemoryMarshal.TryGetArray(source, out ArraySegment<byte> sourceArray))
+                if (MemoryMarshal.TryGetArray(buffer, out ArraySegment<byte> sourceArray))
                 {
                     Write(sourceArray.Array, sourceArray.Offset, sourceArray.Count);
                 }
                 else
                 {
-                    Write(source.Span);
+                    Write(buffer.Span);
                 }
                 return default;
             }
             catch (OperationCanceledException oce)
             {
-                return new ValueTask(Task.FromCancellation<VoidTaskResult>(oce));
+                return new ValueTask(Task.FromCanceled(oce));
             }
             catch (Exception exception)
             {

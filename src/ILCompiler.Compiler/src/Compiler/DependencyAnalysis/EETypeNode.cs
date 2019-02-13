@@ -56,7 +56,7 @@ namespace ILCompiler.DependencyAnalysis
     ///                 |
     /// [Pointer Size]  | Pointer to the generic argument and variance info (optional)
     /// </summary>
-    public partial class EETypeNode : ObjectNode, IExportableSymbolNode, IEETypeNode, ISymbolDefinitionNode
+    public partial class EETypeNode : ObjectNode, IExportableSymbolNode, IEETypeNode, ISymbolDefinitionNode, ISymbolNodeWithLinkage
     {
         protected TypeDesc _type;
         internal EETypeOptionalFieldsBuilder _optionalFieldsBuilder = new EETypeOptionalFieldsBuilder();
@@ -90,9 +90,9 @@ namespace ILCompiler.DependencyAnalysis
             return false;
         }
 
-        public override ObjectNode NodeForLinkage(NodeFactory factory)
+        public virtual ISymbolNode NodeForLinkage(NodeFactory factory)
         {
-            return (ObjectNode)factory.NecessaryTypeSymbol(_type);
+            return factory.NecessaryTypeSymbol(_type);
         }
 
         public ExportForm GetExportForm(NodeFactory factory) => factory.CompilationModuleGroup.GetExportTypeForm(Type);
@@ -359,14 +359,25 @@ namespace ILCompiler.DependencyAnalysis
             if (method.IsAbstract)
                 return false;
 
-            // PInvoke methods, runtime imports, etc. are not permitted on generic types,
+            // PInvoke methods are not permitted on generic types,
             // but let's not crash the compilation because of that.
-            if (method.IsPInvoke || method.IsRuntimeImplemented)
+            if (method.IsPInvoke)
                 return false;
 
-            // InternalCall functions do not really have entrypoints that need to be handled here
-            if (method.IsInternalCall)
-                return false;
+            // CoreRT can generate method bodies for these no matter what (worst case
+            // they'll be throwing), but Project N has trouble with that.
+            //
+            // We don't want to take the "return false" code path on CoreRT because
+            // delegate methods fall into the runtime implemented category on CoreRT, but we
+            // just treat them like regular method bodies. N doesn't have this problem
+            // because they get converted to regular methods in IL transforms.
+            TypeSystemContext context = method.Context;
+            if (context.Target.Abi == TargetAbi.ProjectN)
+            {
+                // InternalCall functions do not really have entrypoints that need to be handled here
+                if (method.IsInternalCall || method.IsRuntimeImplemented)
+                    return false;
+            }
 
             return true;
         }
@@ -424,6 +435,13 @@ namespace ILCompiler.DependencyAnalysis
                             "Ensure all methods on type due to CompilationModuleGroup policy");
                     }
                 }
+            }
+
+            if (!ConstructedEETypeNode.CreationAllowed(_type))
+            {
+                // If necessary EEType is the highest load level for this type, ask the metadata manager
+                // if we have any dependencies due to reflectability.
+                factory.MetadataManager.GetDependenciesDueToReflectability(ref dependencies, factory, _type);
             }
 
             return dependencies;
@@ -774,7 +792,7 @@ namespace ILCompiler.DependencyAnalysis
 
                 // Final NewSlot methods cannot be overridden, and therefore can be placed in the sealed-vtable to reduce the size of the vtable
                 // of this type and any type that inherits from it.
-                if (declMethod.CanMethodBeInSealedVTable() && !declType.IsArrayTypeWithoutGenericInterfaces() && !factory.IsCppCodegenTemporaryWorkaround)
+                if (declMethod.CanMethodBeInSealedVTable() && !declType.IsArrayTypeWithoutGenericInterfaces())
                     continue;
 
                 if (!implMethod.IsAbstract)
@@ -838,7 +856,12 @@ namespace ILCompiler.DependencyAnalysis
                 SealedVTableNode sealedVTable = factory.SealedVTable(_type.ConvertToCanonForm(CanonicalFormKind.Specific));
 
                 if (sealedVTable.BuildSealedVTableSlots(factory, relocsOnly) && sealedVTable.NumSealedVTableEntries > 0)
-                    objData.EmitReloc(sealedVTable, RelocType.IMAGE_REL_BASED_RELPTR32);
+                {
+                    if (factory.Target.SupportsRelativePointers)
+                        objData.EmitReloc(sealedVTable, RelocType.IMAGE_REL_BASED_RELPTR32);
+                    else
+                        objData.EmitPointerReloc(sealedVTable);
+                }
             }
         }
 
@@ -846,7 +869,11 @@ namespace ILCompiler.DependencyAnalysis
         {
             if (_type.HasInstantiation && !_type.IsTypeDefinition)
             {
-                objData.EmitPointerRelocOrIndirectionReference(factory.NecessaryTypeSymbol(_type.GetTypeDefinition()));
+                IEETypeNode typeDefNode = factory.NecessaryTypeSymbol(_type.GetTypeDefinition());
+                if (factory.Target.SupportsRelativePointers)
+                    objData.EmitRelativeRelocOrIndirectionReference(typeDefNode);
+                else
+                    objData.EmitPointerRelocOrIndirectionReference(typeDefNode);
 
                 GenericCompositionDetails details;
                 if (_type.GetTypeDefinition() == factory.ArrayOfTEnumeratorType)
@@ -864,7 +891,11 @@ namespace ILCompiler.DependencyAnalysis
                 else
                     details = new GenericCompositionDetails(_type);
 
-                objData.EmitPointerReloc(factory.GenericComposition(details));
+                ISymbolNode compositionNode = factory.GenericComposition(details);
+                if (factory.Target.SupportsRelativePointers)
+                    objData.EmitReloc(compositionNode, RelocType.IMAGE_REL_BASED_RELPTR32);
+                else
+                    objData.EmitPointerReloc(compositionNode);
             }
         }
 
@@ -907,7 +938,7 @@ namespace ILCompiler.DependencyAnalysis
                 flags |= (uint)EETypeRareFlags.HasCctorFlag;
             }
 
-            if (EETypeBuilderHelpers.ComputeRequiresAlign8(_type))
+            if (_type.RequiresAlign8())
             {
                 flags |= (uint)EETypeRareFlags.RequiresAlign8Flag;
             }
@@ -915,7 +946,6 @@ namespace ILCompiler.DependencyAnalysis
             TargetArchitecture targetArch = _type.Context.Target.Architecture;
             if (metadataType != null &&
                 (targetArch == TargetArchitecture.ARM ||
-                targetArch == TargetArchitecture.ARMEL ||
                 targetArch == TargetArchitecture.ARM64) &&
                 metadataType.IsHfa)
             {
@@ -1243,18 +1273,11 @@ namespace ILCompiler.DependencyAnalysis
             }
         }
 
-        protected internal override int ClassCode => 1521789141;
+        public override int ClassCode => 1521789141;
 
-        protected internal override int CompareToImpl(SortableDependencyNode other, CompilerComparer comparer)
+        public override int CompareToImpl(ISortableNode other, CompilerComparer comparer)
         {
             return comparer.Compare(_type, ((EETypeNode)other)._type);
-        }
-
-        int ISortableSymbolNode.ClassCode => ClassCode;
-
-        int ISortableSymbolNode.CompareToImpl(ISortableSymbolNode other, CompilerComparer comparer)
-        {
-            return CompareToImpl((ObjectNode)other, comparer);
         }
 
         private struct SlotCounter

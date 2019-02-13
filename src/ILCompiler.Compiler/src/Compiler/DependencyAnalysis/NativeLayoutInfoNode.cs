@@ -14,7 +14,7 @@ namespace ILCompiler.DependencyAnalysis
     /// <summary>
     /// Native layout info blob.
     /// </summary>
-    internal sealed class NativeLayoutInfoNode : ObjectNode, ISymbolDefinitionNode
+    public sealed class NativeLayoutInfoNode : ObjectNode, ISymbolDefinitionNode
     {
         private ObjectAndOffsetSymbolNode _endSymbol;
         private ExternalReferencesTableNode _externalReferences;
@@ -95,6 +95,6 @@ namespace ILCompiler.DependencyAnalysis
         }
 
         protected internal override int Phase => (int)ObjectNodePhase.Ordered;
-        protected internal override int ClassCode => (int)ObjectNodeOrder.NativeLayoutInfoNode;
+        public override int ClassCode => (int)ObjectNodeOrder.NativeLayoutInfoNode;
     }
 }

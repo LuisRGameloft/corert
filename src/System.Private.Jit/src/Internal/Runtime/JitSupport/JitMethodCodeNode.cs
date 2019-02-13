@@ -14,7 +14,7 @@ using Debug = System.Diagnostics.Debug;
 
 namespace Internal.Runtime.JitSupport
 {
-    public class JitMethodCodeNode : ObjectNode, IMethodCodeNode
+    public class JitMethodCodeNode : ObjectNode, IMethodNode, ISymbolDefinitionNode
     {
         public JitMethodCodeNode(MethodDesc method)
         {
@@ -28,6 +28,7 @@ namespace Internal.Runtime.JitSupport
         private ObjectData _ehInfo;
         private DebugLocInfo[] _debugLocInfos;
         private DebugVarInfo[] _debugVarInfos;
+        private DebugEHClauseInfo[] _debugEHClauseInfos;
 
         public void SetCode(ObjectData data)
         {
@@ -60,6 +61,7 @@ namespace Internal.Runtime.JitSupport
         }
         public DebugLocInfo[] DebugLocInfos => _debugLocInfos;
         public DebugVarInfo[] DebugVarInfos => _debugVarInfos;
+        public DebugEHClauseInfo[] DebugEHClauseInfos => _debugEHClauseInfos;
 
         public void InitializeDebugLocInfos(DebugLocInfo[] debugLocInfos)
         {
@@ -71,6 +73,12 @@ namespace Internal.Runtime.JitSupport
         {
             Debug.Assert(_debugVarInfos == null);
             _debugVarInfos = debugVarInfos;
+        }
+
+        public void InitializeDebugEHClauseInfos(DebugEHClauseInfo[] debugEHClauseInfos)
+        {
+            Debug.Assert(_debugEHClauseInfos == null);
+            _debugEHClauseInfos = debugEHClauseInfos;
         }
 
         protected override string GetName(NodeFactory factory)

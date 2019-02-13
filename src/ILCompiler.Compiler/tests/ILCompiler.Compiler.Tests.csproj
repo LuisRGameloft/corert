@@ -4,11 +4,14 @@
     <OutputType>Library</OutputType>
     <AssemblyName>ILCompiler.Compiler.Tests</AssemblyName>
     <RootNamespace>ILCompiler.Compiler.Tests</RootNamespace>
-    <TargetFramework>netstandard1.3</TargetFramework>
+    <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.DotNet.BuildTools.TestSuite">
-      <Version>$(XunitNetcoreExtensionsVersion)</Version>
+    <PackageReference Include="xunit">
+      <Version>$(XUnitPackageVersion)</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.DotNet.XUnitExtensions">
+      <Version>$(MicrosoftDotNetXUnitExtensionsVersion)</Version>
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
@@ -16,6 +19,7 @@
     <ProjectReference Include="..\..\ILCompiler.DependencyAnalysisFramework\src\ILCompiler.DependencyAnalysisFramework.csproj" />
     <ProjectReference Include="..\..\ILCompiler.MetadataTransform\src\ILCompiler.MetadataTransform.csproj" />
     <ProjectReference Include="..\..\ILCompiler.MetadataWriter\src\ILCompiler.MetadataWriter.csproj" />
+    <ProjectReference Include="..\..\ILCompiler.RyuJit\src\ILCompiler.RyuJit.csproj" />
     <ProjectReference Include="..\..\ILCompiler.TypeSystem\src\ILCompiler.TypeSystem.csproj" />
 
     <ProjectReference Include="..\..\Test.CoreLib\src\Test.CoreLib.csproj">

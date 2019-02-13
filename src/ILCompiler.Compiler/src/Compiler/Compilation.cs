@@ -31,7 +31,7 @@ namespace ILCompiler
         public NodeFactory NodeFactory => _nodeFactory;
         public CompilerTypeSystemContext TypeSystemContext => NodeFactory.TypeSystemContext;
         public Logger Logger => _logger;
-        internal PInvokeILProvider PInvokeILProvider { get; }
+        public PInvokeILProvider PInvokeILProvider { get; }
 
         private readonly TypeGetTypeMethodThunkCache _typeGetTypeMethodThunks;
         private readonly AssemblyGetExecutingAssemblyMethodThunkCache _assemblyGetExecutingAssemblyMethodThunks;
@@ -41,6 +41,7 @@ namespace ILCompiler
             DependencyAnalyzerBase<NodeFactory> dependencyGraph,
             NodeFactory nodeFactory,
             IEnumerable<ICompilationRootProvider> compilationRoots,
+            ILProvider ilProvider,
             DebugInformationProvider debugInformationProvider,
             DevirtualizationManager devirtualizationManager,
             Logger logger)
@@ -58,51 +59,68 @@ namespace ILCompiler
             foreach (var rootProvider in compilationRoots)
                 rootProvider.AddCompilationRoots(rootingService);
 
-            MetadataType globalModuleGeneratedType = nodeFactory.CompilationModuleGroup.GeneratedAssembly.GetGlobalModuleType();
+            MetadataType globalModuleGeneratedType = nodeFactory.TypeSystemContext.GeneratedAssembly.GetGlobalModuleType();
             _typeGetTypeMethodThunks = new TypeGetTypeMethodThunkCache(globalModuleGeneratedType);
             _assemblyGetExecutingAssemblyMethodThunks = new AssemblyGetExecutingAssemblyMethodThunkCache(globalModuleGeneratedType);
             _methodBaseGetCurrentMethodThunks = new MethodBaseGetCurrentMethodThunkCache();
 
-            bool? forceLazyPInvokeResolution = null;
-            // TODO: Workaround lazy PInvoke resolution not working with CppCodeGen yet
-            // https://github.com/dotnet/corert/issues/2454
-            // https://github.com/dotnet/corert/issues/2149
-            if (nodeFactory.IsCppCodegenTemporaryWorkaround) forceLazyPInvokeResolution = false;
-            PInvokeILProvider = new PInvokeILProvider(new PInvokeILEmitterConfiguration(forceLazyPInvokeResolution), nodeFactory.InteropStubManager.InteropStateManager);
+            if (!(nodeFactory.InteropStubManager is EmptyInteropStubManager))
+            {
+                bool? forceLazyPInvokeResolution = null;
+                // TODO: Workaround lazy PInvoke resolution not working with CppCodeGen yet
+                // https://github.com/dotnet/corert/issues/2454
+                // https://github.com/dotnet/corert/issues/2149
+                if (nodeFactory.IsCppCodegenTemporaryWorkaround) forceLazyPInvokeResolution = false;
+                PInvokeILProvider = new PInvokeILProvider(new PInvokeILEmitterConfiguration(forceLazyPInvokeResolution), nodeFactory.InteropStubManager.InteropStateManager);
 
-            _methodILCache = new ILProvider(PInvokeILProvider);
+                ilProvider = new CombinedILProvider(ilProvider, PInvokeILProvider);
+            }
+
+            _methodILCache = new ILCache(ilProvider);
         }
 
-        private ILProvider _methodILCache;
-        
+        private ILCache _methodILCache;
+
         public MethodIL GetMethodIL(MethodDesc method)
         {
             // Flush the cache when it grows too big
             if (_methodILCache.Count > 1000)
-                _methodILCache = new ILProvider(PInvokeILProvider);
+                _methodILCache = new ILCache(_methodILCache.ILProvider);
 
-            return _methodILCache.GetMethodIL(method);
+            return _methodILCache.GetOrCreateValue(method).MethodIL;
         }
 
         protected abstract void ComputeDependencyNodeDependencies(List<DependencyNodeCore<NodeFactory>> obj);
 
         protected abstract void CompileInternal(string outputFile, ObjectDumper dumper);
 
+        public virtual bool CanInline(MethodDesc caller, MethodDesc callee)
+        {
+            // No restrictions on inlining by default
+            return true;
+        }
+
         public DelegateCreationInfo GetDelegateCtor(TypeDesc delegateType, MethodDesc target, bool followVirtualDispatch)
         {
+            // If we're creating a delegate to a virtual method that cannot be overriden, devirtualize.
+            // This is not just an optimization - it's required for correctness in the presence of sealed
+            // vtable slots.
+            if (followVirtualDispatch && (target.IsFinal || target.OwningType.IsSealed()))
+                followVirtualDispatch = false;
+
             return DelegateCreationInfo.Create(delegateType, target, NodeFactory, followVirtualDispatch);
         }
 
         /// <summary>
         /// Gets an object representing the static data for RVA mapped fields from the PE image.
         /// </summary>
-        public ObjectNode GetFieldRvaData(FieldDesc field)
+        public virtual ObjectNode GetFieldRvaData(FieldDesc field)
         {
             if (field.GetType() == typeof(PInvokeLazyFixupField))
             {
                 var pInvokeFixup = (PInvokeLazyFixupField)field;
                 PInvokeMetadata metadata = pInvokeFixup.PInvokeMetadata;
-                return NodeFactory.PInvokeMethodFixup(metadata.Module, metadata.Name);
+                return NodeFactory.PInvokeMethodFixup(metadata.Module, metadata.Name, metadata.Flags);
             }
             else
             {
@@ -203,6 +221,7 @@ namespace ILCompiler
                 case ReadyToRunHelperId.TypeHandle:
                 case ReadyToRunHelperId.NecessaryTypeHandle:
                 case ReadyToRunHelperId.DefaultConstructor:
+                case ReadyToRunHelperId.TypeHandleForCasting:
                     return ((TypeDesc)targetOfLookup).IsRuntimeDeterminedSubtype;
 
                 case ReadyToRunHelperId.MethodDictionary:
@@ -227,6 +246,13 @@ namespace ILCompiler
                     return NodeFactory.ConstructedTypeSymbol((TypeDesc)targetOfLookup);
                 case ReadyToRunHelperId.NecessaryTypeHandle:
                     return NodeFactory.NecessaryTypeSymbol((TypeDesc)targetOfLookup);
+                case ReadyToRunHelperId.TypeHandleForCasting:
+                    {
+                        var type = (TypeDesc)targetOfLookup;
+                        if (type.IsNullable)
+                            targetOfLookup = type.Instantiation[0];
+                        return NodeFactory.NecessaryTypeSymbol((TypeDesc)targetOfLookup);
+                    }
                 case ReadyToRunHelperId.MethodDictionary:
                     return NodeFactory.MethodGenericDictionary((MethodDesc)targetOfLookup);
                 case ReadyToRunHelperId.MethodEntry:
@@ -271,6 +297,32 @@ namespace ILCompiler
                 contextSource = GenericContextSource.ThisObject;
             }
 
+            //
+            // Some helpers represent logical concepts that might not be something that can be looked up in a dictionary
+            //
+
+            // Downgrade type handle for casting to a normal type handle if possible
+            if (lookupKind == ReadyToRunHelperId.TypeHandleForCasting)
+            {
+                var type = (TypeDesc)targetOfLookup;
+                if (!type.IsRuntimeDeterminedType ||
+                    (!((RuntimeDeterminedType)type).CanonicalType.IsCanonicalDefinitionType(CanonicalFormKind.Universal) &&
+                    !((RuntimeDeterminedType)type).CanonicalType.IsNullable))
+                {
+                    if (type.IsNullable)
+                    {
+                        targetOfLookup = type.Instantiation[0];
+                    }
+                    lookupKind = ReadyToRunHelperId.NecessaryTypeHandle;
+                }
+            }
+
+            // We don't have separate entries for necessary type handles to avoid possible duplication
+            if (lookupKind == ReadyToRunHelperId.NecessaryTypeHandle)
+            {
+                lookupKind = ReadyToRunHelperId.TypeHandle;
+            }
+
             // Can we do a fixed lookup? Start by checking if we can get to the dictionary.
             // Context source having a vtable with fixed slots is a prerequisite.
             if (contextSource == GenericContextSource.MethodParameter
@@ -308,7 +360,21 @@ namespace ILCompiler
             }
 
             // Fixed lookup not possible - use helper.
-            return GenericDictionaryLookup.CreateHelperLookup(contextSource);
+            return GenericDictionaryLookup.CreateHelperLookup(contextSource, lookupKind, targetOfLookup);
+        }
+
+        /// <summary>
+        /// Gets the type of System.Type descendant that implements runtime types.
+        /// </summary>
+        public virtual TypeDesc GetTypeOfRuntimeType()
+        {
+            ModuleDesc reflectionCoreModule = TypeSystemContext.GetModuleForSimpleName("System.Private.Reflection.Core", false);
+            if (reflectionCoreModule != null)
+            {
+                return reflectionCoreModule.GetKnownType("System.Reflection.Runtime.TypeInfos", "RuntimeTypeInfo");
+            }
+
+            return null;
         }
 
         CompilationResults ICompilation.Compile(string outputFile, ObjectDumper dumper)
@@ -318,8 +384,6 @@ namespace ILCompiler
                 dumper.Begin();
             }
 
-            // In multi-module builds, set the compilation unit prefix to prevent ambiguous symbols in linked object files
-            NameMangler.CompilationUnitPrefix = _nodeFactory.CompilationModuleGroup.IsSingleFileCompilation ? "" : Path.GetFileNameWithoutExtension(outputFile);
             CompileInternal(outputFile, dumper);
 
             if (dumper != null)
@@ -343,11 +407,15 @@ namespace ILCompiler
 
             public void AddCompilationRoot(MethodDesc method, string reason, string exportName = null)
             {
-                IMethodNode methodEntryPoint = _factory.CanonicalEntrypoint(method);
+                MethodDesc canonMethod = method.GetCanonMethodTarget(CanonicalFormKind.Specific);
+                IMethodNode methodEntryPoint = _factory.MethodEntrypoint(canonMethod);
                 _graph.AddRoot(methodEntryPoint, reason);
 
                 if (exportName != null)
                     _factory.NodeAliases.Add(methodEntryPoint, exportName);
+
+                if (canonMethod != method && method.HasInstantiation)
+                    _graph.AddRoot(_factory.MethodGenericDictionary(method), reason);
             }
 
             public void AddCompilationRoot(TypeDesc type, string reason)
@@ -360,7 +428,7 @@ namespace ILCompiler
                 Debug.Assert(!type.IsGenericDefinition);
 
                 MetadataType metadataType = type as MetadataType;
-                if (metadataType != null && metadataType.ThreadStaticFieldSize.AsInt > 0)
+                if (metadataType != null && metadataType.ThreadGcStaticFieldSize.AsInt > 0)
                 {
                     _graph.AddRoot(_factory.TypeThreadStaticIndex(metadataType), reason);
 
@@ -400,10 +468,17 @@ namespace ILCompiler
             {
                 Debug.Assert(method.IsVirtual);
 
-                // Virtual method use is tracked on the slot defining method only.
-                MethodDesc slotDefiningMethod = MetadataVirtualMethodAlgorithm.FindSlotDefiningMethodForVirtualMethod(method);
-                if (!_factory.VTable(slotDefiningMethod.OwningType).HasFixedSlots)
-                    _graph.AddRoot(_factory.VirtualMethodUse(slotDefiningMethod), reason);
+                if (method.HasInstantiation)
+                {
+                    _graph.AddRoot(_factory.GVMDependencies(method), reason);
+                }
+                else
+                {
+                    // Virtual method use is tracked on the slot defining method only.
+                    MethodDesc slotDefiningMethod = MetadataVirtualMethodAlgorithm.FindSlotDefiningMethodForVirtualMethod(method);
+                    if (!_factory.VTable(slotDefiningMethod.OwningType).HasFixedSlots)
+                        _graph.AddRoot(_factory.VirtualMethodUse(slotDefiningMethod), reason);
+                }
 
                 if (method.IsAbstract)
                 {
@@ -413,7 +488,74 @@ namespace ILCompiler
 
             public void RootModuleMetadata(ModuleDesc module, string reason)
             {
-                _graph.AddRoot(_factory.ModuleMetadata(module), reason);
+                // RootModuleMetadata is kind of a hack - this is pretty much only used to force include
+                // type forwarders from assemblies metadata generator would normally not look at.
+                // This will go away when the temporary RD.XML parser goes away.
+                if (_factory.MetadataManager is UsageBasedMetadataManager)
+                    _graph.AddRoot(_factory.ModuleMetadata(module), reason);
+            }
+
+            public void RootReadOnlyDataBlob(byte[] data, int alignment, string reason, string exportName)
+            {
+                _graph.AddRoot(_factory.ReadOnlyDataBlob(exportName, data, alignment), reason);
+            }
+        }
+
+        private sealed class ILCache : LockFreeReaderHashtable<MethodDesc, ILCache.MethodILData>
+        {
+            public ILProvider ILProvider { get; }
+
+            public ILCache(ILProvider provider)
+            {
+                ILProvider = provider;
+            }
+
+            protected override int GetKeyHashCode(MethodDesc key)
+            {
+                return key.GetHashCode();
+            }
+            protected override int GetValueHashCode(MethodILData value)
+            {
+                return value.Method.GetHashCode();
+            }
+            protected override bool CompareKeyToValue(MethodDesc key, MethodILData value)
+            {
+                return Object.ReferenceEquals(key, value.Method);
+            }
+            protected override bool CompareValueToValue(MethodILData value1, MethodILData value2)
+            {
+                return Object.ReferenceEquals(value1.Method, value2.Method);
+            }
+            protected override MethodILData CreateValueFromKey(MethodDesc key)
+            {
+                return new MethodILData() { Method = key, MethodIL = ILProvider.GetMethodIL(key) };
+            }
+
+            internal class MethodILData
+            {
+                public MethodDesc Method;
+                public MethodIL MethodIL;
+            }
+        }
+
+        private sealed class CombinedILProvider : ILProvider
+        {
+            private readonly ILProvider _primaryILProvider;
+            private readonly PInvokeILProvider _pinvokeProvider;
+
+            public CombinedILProvider(ILProvider primaryILProvider, PInvokeILProvider pinvokeILProvider)
+            {
+                _primaryILProvider = primaryILProvider;
+                _pinvokeProvider = pinvokeILProvider;
+            }
+
+            public override MethodIL GetMethodIL(MethodDesc method)
+            {
+                MethodIL result = _primaryILProvider.GetMethodIL(method);
+                if (result == null && method.IsPInvoke)
+                    result = _pinvokeProvider.GetMethodIL(method);
+
+                return result;
             }
         }
     }

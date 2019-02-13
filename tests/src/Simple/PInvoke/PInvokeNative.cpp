@@ -313,10 +313,14 @@ DLL_EXPORT bool __stdcall SafeHandleTest(HANDLE sh, long shValue)
 
 DLL_EXPORT long __stdcall SafeHandleOutTest(HANDLE **sh)
 {
-    if (sh == NULL) 
-        return -1;
-
     *sh = (HANDLE *)malloc(100);
+    return (long)((size_t)(*sh));
+}
+
+DLL_EXPORT long __stdcall SafeHandleRefTest(HANDLE **sh, bool alloc)
+{
+    if (alloc)
+        *sh = (HANDLE *)malloc(100);
     return (long)((size_t)(*sh));
 }
 
@@ -330,6 +334,14 @@ DLL_EXPORT bool __stdcall ReversePInvoke_String(StringFuncPtr fnPtr)
 {
     char str[] = "Hello World";
     return fnPtr(str);
+}
+
+typedef bool(__stdcall *ArrayFuncPtr) (int *, size_t sz);
+DLL_EXPORT bool __stdcall ReversePInvoke_Array(ArrayFuncPtr fnPtr)
+{
+    int a[42];
+    for (int i = 0; i < 42; i++) a[i] = i;
+    return fnPtr(a, 42);
 }
 
 bool CheckString(char *str)

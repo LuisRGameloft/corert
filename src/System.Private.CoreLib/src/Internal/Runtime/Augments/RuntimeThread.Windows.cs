@@ -11,7 +11,7 @@ using System.Threading;
 namespace Internal.Runtime.Augments
 {
     using Interop = global::Interop; /// due to the existence of <see cref="Internal.Interop"/>
-    using OSThreadPriority = Interop.mincore.ThreadPriority;
+    using OSThreadPriority = Interop.Kernel32.ThreadPriority;
 
     public sealed partial class RuntimeThread
     {
@@ -21,7 +21,12 @@ namespace Internal.Runtime.Augments
         [ThreadStatic]
         private static ApartmentType t_apartmentType;
 
+        [ThreadStatic]
+        private static bool t_comInitializedByUs;
+
         private SafeWaitHandle _osHandle;
+
+        private ApartmentState _initialApartmentState = ApartmentState.Unknown;
 
         /// <summary>
         /// Used by <see cref="WaitHandle"/>'s multi-wait functions
@@ -86,12 +91,12 @@ namespace Internal.Runtime.Augments
 
         private static SafeWaitHandle GetOSHandleForCurrentThread()
         {
-            IntPtr currentProcHandle = Interop.mincore.GetCurrentProcess();
-            IntPtr currentThreadHandle = Interop.mincore.GetCurrentThread();
+            IntPtr currentProcHandle = Interop.Kernel32.GetCurrentProcess();
+            IntPtr currentThreadHandle = Interop.Kernel32.GetCurrentThread();
             SafeWaitHandle threadHandle;
 
-            if (Interop.mincore.DuplicateHandle(currentProcHandle, currentThreadHandle, currentProcHandle,
-                out threadHandle, 0, false, (uint)Interop.Constants.DuplicateSameAccess))
+            if (Interop.Kernel32.DuplicateHandle(currentProcHandle, currentThreadHandle, currentProcHandle,
+                out threadHandle, 0, false, Interop.Kernel32.DUPLICATE_SAME_ACCESS))
             {
                 return threadHandle;
             }
@@ -99,7 +104,7 @@ namespace Internal.Runtime.Augments
             // Throw an ApplicationException for compatibility with CoreCLR. First save the error code.
             int errorCode = Marshal.GetLastWin32Error();
             var ex = new ApplicationException();
-            ex.SetErrorCode(errorCode);
+            ex.HResult = errorCode;
             throw ex;
         }
 
@@ -163,13 +168,13 @@ namespace Internal.Runtime.Augments
         private ThreadPriority GetPriorityLive()
         {
             Debug.Assert(!_osHandle.IsInvalid);
-            return MapFromOSPriority(Interop.mincore.GetThreadPriority(_osHandle));
+            return MapFromOSPriority(Interop.Kernel32.GetThreadPriority(_osHandle));
         }
 
         private bool SetPriorityLive(ThreadPriority priority)
         {
             Debug.Assert(!_osHandle.IsInvalid);
-            return Interop.mincore.SetThreadPriority(_osHandle, (int)MapToOSPriority(priority));
+            return Interop.Kernel32.SetThreadPriority(_osHandle, (int)MapToOSPriority(priority));
         }
 
         private ThreadState GetThreadState()
@@ -219,14 +224,14 @@ namespace Internal.Runtime.Augments
 
                 if (millisecondsTimeout == 0)
                 {
-                    result = (int)Interop.mincore.WaitForSingleObject(waitHandle.DangerousGetHandle(), 0);
+                    result = (int)Interop.Kernel32.WaitForSingleObject(waitHandle.DangerousGetHandle(), 0);
                 }
                 else
                 {
                     result = WaitHandle.WaitForSingleObject(waitHandle.DangerousGetHandle(), millisecondsTimeout, true);
                 }
 
-                return result == (int)Interop.Constants.WaitObject0;
+                return result == (int)Interop.Kernel32.WAIT_OBJECT_0;
             }
             finally
             {
@@ -256,9 +261,9 @@ namespace Internal.Runtime.Augments
             }
 
             uint threadId;
-            _osHandle = Interop.mincore.CreateThread(IntPtr.Zero, (IntPtr)stackSize,
-                AddrofIntrinsics.AddrOf<Interop.mincore.ThreadProc>(ThreadEntryPoint), (IntPtr)thisThreadHandle,
-                (uint)(Interop.Constants.CreateSuspended | Interop.Constants.StackSizeParamIsAReservation),
+            _osHandle = Interop.Kernel32.CreateThread(IntPtr.Zero, (IntPtr)stackSize,
+                AddrofIntrinsics.AddrOf<Interop.Kernel32.ThreadProc>(ThreadEntryPoint), (IntPtr)thisThreadHandle,
+                Interop.Kernel32.CREATE_SUSPENDED | Interop.Kernel32.STACK_SIZE_PARAM_IS_A_RESERVATION,
                 out threadId);
 
             if (_osHandle.IsInvalid)
@@ -269,7 +274,7 @@ namespace Internal.Runtime.Augments
             // CoreCLR ignores OS errors while setting the priority, so do we
             SetPriorityLive(_priority);
 
-            Interop.mincore.ResumeThread(_osHandle);
+            Interop.Kernel32.ResumeThread(_osHandle);
             return true;
         }
 
@@ -283,20 +288,113 @@ namespace Internal.Runtime.Augments
             return 0;
         }
 
-        public ApartmentState GetApartmentState() { throw null; }
-        public bool TrySetApartmentState(ApartmentState state) { throw null; }
-        public void DisableComObjectEagerCleanup() { throw null; }
-        public void Interrupt() { throw null; }
+        public ApartmentState GetApartmentState()
+        {
+            if (this != CurrentThread)
+            {
+                if (HasStarted())
+                    throw new ThreadStateException();
+                return _initialApartmentState;
+            }
+
+            switch (GetCurrentApartmentType())
+            {
+                case ApartmentType.STA:
+                    return ApartmentState.STA;
+                case ApartmentType.MTA:
+                    return ApartmentState.MTA;
+                default:
+                    return ApartmentState.Unknown;
+            }
+        }
+
+        public bool TrySetApartmentState(ApartmentState state)
+        {
+            if (this != CurrentThread)
+            {
+                using (LockHolder.Hold(_lock))
+                {
+                    if (HasStarted())
+                        throw new ThreadStateException();
+                    _initialApartmentState = state;
+                    return true;
+                }
+            }
+
+            if (state != ApartmentState.Unknown)
+            {
+                InitializeCom(state);
+            }
+            else
+            {
+                UninitializeCom();
+            }
+
+            // Clear the cache and check whether new state matches the desired state
+            t_apartmentType = ApartmentType.Unknown;
+            return state == GetApartmentState();
+        }
+
+        private void InitializeComOnNewThread()
+        {
+            InitializeCom(_initialApartmentState);
+        }
+
+        internal static void InitializeCom(ApartmentState state = ApartmentState.MTA)
+        {
+            if (t_comInitializedByUs)
+                return;
+
+#if ENABLE_WINRT
+            int hr = Interop.WinRT.RoInitialize(
+                (state == ApartmentState.STA) ? Interop.WinRT.RO_INIT_SINGLETHREADED
+                    : Interop.WinRT.RO_INIT_MULTITHREADED);
+#else
+            int hr = Interop.Ole32.CoInitializeEx(IntPtr.Zero,
+                (state == ApartmentState.STA) ? Interop.Ole32.COINIT_APARTMENTTHREADED
+                    : Interop.Ole32.COINIT_MULTITHREADED);
+#endif
+            // RPC_E_CHANGED_MODE indicates this thread has been already initialized with a different
+            // concurrency model. We stay away and let whoever else initialized the COM to be in control.
+            if (hr == HResults.RPC_E_CHANGED_MODE)
+                return;
+            if (hr < 0)
+                throw new OutOfMemoryException();
+
+            t_comInitializedByUs = true;
+
+            // If the thread has already been CoInitialized to the proper mode, then
+            // we don't want to leave an outstanding CoInit so we CoUninit.
+            if (hr > 0)
+                UninitializeCom();
+        }
+
+        private static void UninitializeCom()
+        {
+            if (!t_comInitializedByUs)
+                return;
+
+#if ENABLE_WINRT
+            Interop.WinRT.RoUninitialize();
+#else
+            Interop.Ole32.CoUninitialize();
+#endif
+            t_comInitializedByUs = false;
+        }
+
+        // TODO: https://github.com/dotnet/corefx/issues/20766
+        public void DisableComObjectEagerCleanup() { }
+        public void Interrupt() { throw new PlatformNotSupportedException(); }
 
         internal static void UninterruptibleSleep0()
         {
-            Interop.mincore.Sleep(0);
+            Interop.Kernel32.Sleep(0);
         }
 
         private static void SleepInternal(int millisecondsTimeout)
         {
             Debug.Assert(millisecondsTimeout >= -1);
-            Interop.mincore.Sleep((uint)millisecondsTimeout);
+            Interop.Kernel32.Sleep((uint)millisecondsTimeout);
         }
 
         //
@@ -324,40 +422,40 @@ namespace Internal.Runtime.Augments
             if (currentThreadType != ApartmentType.Unknown)
                 return currentThreadType;
 
-            Interop._APTTYPE aptType;
-            Interop._APTTYPEQUALIFIER aptTypeQualifier;
-            int result = Interop.mincore.CoGetApartmentType(out aptType, out aptTypeQualifier);
+            Interop.APTTYPE aptType;
+            Interop.APTTYPEQUALIFIER aptTypeQualifier;
+            int result = Interop.Ole32.CoGetApartmentType(out aptType, out aptTypeQualifier);
 
             ApartmentType type = ApartmentType.Unknown;
 
-            switch ((Interop.Constants)result)
+            switch (result)
             {
-                case Interop.Constants.CoENotInitialized:
+                case HResults.CO_E_NOTINITIALIZED:
                     type = ApartmentType.None;
                     break;
 
-                case Interop.Constants.SOk:
+                case HResults.S_OK:
                     switch (aptType)
                     {
-                        case Interop._APTTYPE.APTTYPE_STA:
-                        case Interop._APTTYPE.APTTYPE_MAINSTA:
+                        case Interop.APTTYPE.APTTYPE_STA:
+                        case Interop.APTTYPE.APTTYPE_MAINSTA:
                             type = ApartmentType.STA;
                             break;
 
-                        case Interop._APTTYPE.APTTYPE_MTA:
+                        case Interop.APTTYPE.APTTYPE_MTA:
                             type = ApartmentType.MTA;
                             break;
 
-                        case Interop._APTTYPE.APTTYPE_NA:
+                        case Interop.APTTYPE.APTTYPE_NA:
                             switch (aptTypeQualifier)
                             {
-                                case Interop._APTTYPEQUALIFIER.APTTYPEQUALIFIER_NA_ON_MTA:
-                                case Interop._APTTYPEQUALIFIER.APTTYPEQUALIFIER_NA_ON_IMPLICIT_MTA:
+                                case Interop.APTTYPEQUALIFIER.APTTYPEQUALIFIER_NA_ON_MTA:
+                                case Interop.APTTYPEQUALIFIER.APTTYPEQUALIFIER_NA_ON_IMPLICIT_MTA:
                                     type = ApartmentType.MTA;
                                     break;
 
-                                case Interop._APTTYPEQUALIFIER.APTTYPEQUALIFIER_NA_ON_STA:
-                                case Interop._APTTYPEQUALIFIER.APTTYPEQUALIFIER_NA_ON_MAINSTA:
+                                case Interop.APTTYPEQUALIFIER.APTTYPEQUALIFIER_NA_ON_STA:
+                                case Interop.APTTYPEQUALIFIER.APTTYPEQUALIFIER_NA_ON_MAINSTA:
                                     type = ApartmentType.STA;
                                     break;
 

@@ -193,6 +193,7 @@ namespace Internal.JitInterface
     // Constant Lookups are either:
     //     IAT_VALUE: immediate (relocatable) values,
     //     IAT_PVALUE: immediate values access via an indirection through an immediate (relocatable) address
+    //     IAT_RELPVALUE: immediate values access via a relative indirection through an immediate offset
     //     IAT_PPVALUE: immediate values access via a double indirection through an immediate (relocatable) address
     //
     // Runtime Lookups
@@ -220,6 +221,7 @@ namespace Internal.JitInterface
         // If accessType is
         //     IAT_VALUE   --> "handle" stores the real handle or "addr " stores the computed address
         //     IAT_PVALUE  --> "addr" stores a pointer to a location which will hold the real handle
+        //     IAT_RELPVALUE --> "addr" stores a relative pointer to a location which will hold the real handle
         //     IAT_PPVALUE --> "addr" stores a double indirection to a location which will hold the real handle
 
         public InfoAccessType accessType;
@@ -301,6 +303,7 @@ namespace Internal.JitInterface
         // Otherwise, it's a representative...  If accessType is
         //     IAT_VALUE --> "handle" stores the real handle or "addr " stores the computed address
         //     IAT_PVALUE --> "addr" stores a pointer to a location which will hold the real handle
+        //     IAT_RELPVALUE --> "addr" stores a relative pointer to a location which will hold the real handle
         //     IAT_PPVALUE --> "addr" stores a double indirection to a location which will hold the real handle
         public ref CORINFO_CONST_LOOKUP constLookup
         {
@@ -429,7 +432,7 @@ namespace Internal.JitInterface
         CORINFO_GENERICS_CTXT_KEEP_ALIVE = 0x00000100, // Keep the generics context alive throughout the method even if there is no explicit use, and report its location to the CLR
     }
 
-    internal enum CorInfoIntrinsics
+    public enum CorInfoIntrinsics
     {
         CORINFO_INTRINSIC_Sin,
         CORINFO_INTRINSIC_Cos,
@@ -495,7 +498,8 @@ namespace Internal.JitInterface
     {
         IAT_VALUE,      // The info value is directly available
         IAT_PVALUE,     // The value needs to be accessed via an       indirection
-        IAT_PPVALUE     // The value needs to be accessed via a double indirection
+        IAT_PPVALUE,    // The value needs to be accessed via a double indirection
+        IAT_RELPVALUE   // The value needs to be accessed via a relative indirection
     }
 
     public enum CorInfoGCType
@@ -524,6 +528,19 @@ namespace Internal.JitInterface
         // failures are negative
         INLINE_FAIL = -1,   // Inlining not OK for this case only
         INLINE_NEVER = -2,   // This method should never be inlined, regardless of context
+    }
+
+    public enum CorInfoInlineTypeCheck
+    {
+        CORINFO_INLINE_TYPECHECK_NONE = 0x00000000, // It's not okay to compare type's vtable with a native type handle
+        CORINFO_INLINE_TYPECHECK_PASS = 0x00000001, // It's okay to compare type's vtable with a native type handle
+        CORINFO_INLINE_TYPECHECK_USE_HELPER = 0x00000002, // Use a specialized helper to compare type's vtable with native type handle
+    }
+
+    public enum CorInfoInlineTypeCheckSource
+    {
+        CORINFO_INLINE_TYPECHECK_SOURCE_VTABLE = 0x00000000, // Type handle comes from the vtable
+        CORINFO_INLINE_TYPECHECK_SOURCE_TOKEN  = 0x00000001, // Type handle comes from an ldtoken
     }
 
     public enum CorInfoInlineRestrictions
@@ -594,7 +611,7 @@ namespace Internal.JitInterface
 
     // these are the attribute flags for fields and methods (getMethodAttribs)
     [Flags]
-    internal enum CorInfoFlag : uint
+    public enum CorInfoFlag : uint
     {
         //  CORINFO_FLG_UNUSED                = 0x00000001,
         //  CORINFO_FLG_UNUSED                = 0x00000002,
@@ -619,7 +636,7 @@ namespace Internal.JitInterface
         CORINFO_FLG_NOGCCHECK = 0x00200000, // This method is FCALL that has no GC check.  Don't put alone in loops
         CORINFO_FLG_INTRINSIC = 0x00400000, // This method MAY have an intrinsic ID
         CORINFO_FLG_CONSTRUCTOR = 0x00800000, // This method is an instance or type initializer
-        //  CORINFO_FLG_UNUSED                = 0x01000000,
+        CORINFO_FLG_AGGRESSIVE_OPT = 0x01000000, // The method may contain hot code and should be aggressively optimized if possible
         //  CORINFO_FLG_UNUSED                = 0x02000000,
         CORINFO_FLG_NOSECURITYWRAP = 0x04000000, // The method requires no security checks
         CORINFO_FLG_DONT_INLINE = 0x10000000, // The method should not be inlined
@@ -1106,6 +1123,7 @@ namespace Internal.JitInterface
 
         CORINFO_FIELD_INTRINSIC_ZERO,           // intrinsic zero (IntPtr.Zero, UIntPtr.Zero)
         CORINFO_FIELD_INTRINSIC_EMPTY_STRING,   // intrinsic emptry string (String.Empty)
+        CORINFO_FIELD_INTRINSIC_ISLITTLEENDIAN, // intrinsic BitConverter.IsLittleEndian
     }
 
     // Set of flags returned in CORINFO_FIELD_INFO::fieldFlags
@@ -1246,154 +1264,6 @@ namespace Internal.JitInterface
         public uint endOffset;
         public uint varNumber;
     };
-
-    public struct NativeVarInfo
-    {
-        public uint startOffset;
-        public uint endOffset;
-        public uint varNumber;
-        public VarLoc varLoc;
-    };
-
-    // The following 16 bytes come from coreclr types. See comment below.
-    [StructLayout(LayoutKind.Sequential)]
-    public struct VarLoc
-    {
-        IntPtr A; // vlType + padding
-        int B;
-        int C;
-        int D;
-
-        /*
-           Changes to the following types may require revisiting the above layout.
-     
-            In coreclr\src\inc\cordebuginfo.h
-
-            enum VarLocType
-            {
-                VLT_REG,        // variable is in a register
-                VLT_REG_BYREF,  // address of the variable is in a register
-                VLT_REG_FP,     // variable is in an fp register
-                VLT_STK,        // variable is on the stack (memory addressed relative to the frame-pointer)
-                VLT_STK_BYREF,  // address of the variable is on the stack (memory addressed relative to the frame-pointer)
-                VLT_REG_REG,    // variable lives in two registers
-                VLT_REG_STK,    // variable lives partly in a register and partly on the stack
-                VLT_STK_REG,    // reverse of VLT_REG_STK
-                VLT_STK2,       // variable lives in two slots on the stack
-                VLT_FPSTK,      // variable lives on the floating-point stack
-                VLT_FIXED_VA,   // variable is a fixed argument in a varargs function (relative to VARARGS_HANDLE)
-
-                VLT_COUNT,
-                VLT_INVALID,
-        #ifdef MDIL
-                VLT_MDIL_SYMBOLIC = 0x20
-        #endif
-
-            };
-
-            struct VarLoc
-            {
-                VarLocType      vlType;
-
-                union
-                {
-                    // VLT_REG/VLT_REG_FP -- Any pointer-sized enregistered value (TYP_INT, TYP_REF, etc)
-                    // eg. EAX
-                    // VLT_REG_BYREF -- the specified register contains the address of the variable
-                    // eg. [EAX]
-
-                    struct
-                    {
-                        RegNum      vlrReg;
-                    } vlReg;
-
-                    // VLT_STK -- Any 32 bit value which is on the stack
-                    // eg. [ESP+0x20], or [EBP-0x28]
-                    // VLT_STK_BYREF -- the specified stack location contains the address of the variable
-                    // eg. mov EAX, [ESP+0x20]; [EAX]
-
-                    struct
-                    {
-                        RegNum      vlsBaseReg;
-                        signed      vlsOffset;
-                    } vlStk;
-
-                    // VLT_REG_REG -- TYP_LONG with both DWords enregistred
-                    // eg. RBM_EAXEDX
-
-                    struct
-                    {
-                        RegNum      vlrrReg1;
-                        RegNum      vlrrReg2;
-                    } vlRegReg;
-
-                    // VLT_REG_STK -- Partly enregistered TYP_LONG
-                    // eg { LowerDWord=EAX UpperDWord=[ESP+0x8] }
-
-                    struct
-                    {
-                        RegNum      vlrsReg;
-                        struct
-                        {
-                            RegNum      vlrssBaseReg;
-                            signed      vlrssOffset;
-                        }           vlrsStk;
-                    } vlRegStk;
-
-                    // VLT_STK_REG -- Partly enregistered TYP_LONG
-                    // eg { LowerDWord=[ESP+0x8] UpperDWord=EAX }
-
-                    struct
-                    {
-                        struct
-                        {
-                            RegNum      vlsrsBaseReg;
-                            signed      vlsrsOffset;
-                        }           vlsrStk;
-                        RegNum      vlsrReg;
-                    } vlStkReg;
-
-                    // VLT_STK2 -- Any 64 bit value which is on the stack,
-                    // in 2 successsive DWords.
-                    // eg 2 DWords at [ESP+0x10]
-
-                    struct
-                    {
-                        RegNum      vls2BaseReg;
-                        signed      vls2Offset;
-                    } vlStk2;
-
-                    // VLT_FPSTK -- enregisterd TYP_DOUBLE (on the FP stack)
-                    // eg. ST(3). Actually it is ST("FPstkHeigth - vpFpStk")
-
-                    struct
-                    {
-                        unsigned        vlfReg;
-                    } vlFPstk;
-
-                    // VLT_FIXED_VA -- fixed argument of a varargs function.
-                    // The argument location depends on the size of the variable
-                    // arguments (...). Inspecting the VARARGS_HANDLE indicates the
-                    // location of the first arg. This argument can then be accessed
-                    // relative to the position of the first arg
-
-                    struct
-                    {
-                        unsigned        vlfvOffset;
-                    } vlFixedVarArg;
-
-                    // VLT_MEMORY
-
-                    struct
-                    {
-                        void        *rpValue; // pointer to the in-process
-                        // location of the value.
-                    } vlMemory;
-                };
-            };
-        */
-    };
-
 
     // This enum is used for JIT to tell EE where this token comes from.
     // E.g. Depending on different opcodes, we might allow/disallow certain types of tokens or 

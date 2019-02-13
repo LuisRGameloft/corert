@@ -10,7 +10,7 @@ namespace ILCompiler.DependencyAnalysis
     /// <summary>
     /// Represents a node containing information necessary at runtime to locate type's thread static base.
     /// </summary>
-    internal class TypeThreadStaticIndexNode : ObjectNode, ISymbolDefinitionNode
+    public class TypeThreadStaticIndexNode : ObjectNode, ISymbolDefinitionNode
     {
         private MetadataType _type;
 
@@ -67,9 +67,11 @@ namespace ILCompiler.DependencyAnalysis
             return objData.ToObjectData();
         }
 
-        protected internal override int ClassCode => -149601250;
+        public MetadataType Type => _type;
 
-        protected internal override int CompareToImpl(SortableDependencyNode other, CompilerComparer comparer)
+        public override int ClassCode => -149601250;
+
+        public override int CompareToImpl(ISortableNode other, CompilerComparer comparer)
         {
             return comparer.Compare(_type, ((TypeThreadStaticIndexNode)other)._type);
         }

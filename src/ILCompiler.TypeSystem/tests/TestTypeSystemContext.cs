@@ -45,7 +45,7 @@ namespace TypeSystemTests
 
         public ModuleDesc CreateModuleForSimpleName(string simpleName)
         {
-            ModuleDesc module = Internal.TypeSystem.Ecma.EcmaModule.Create(this, new PEReader(File.OpenRead(simpleName + ".dll")));
+            ModuleDesc module = Internal.TypeSystem.Ecma.EcmaModule.Create(this, new PEReader(File.OpenRead(simpleName + ".dll")), containingAssembly: null);
             _modules.Add(simpleName, module);
             return module;
         }
@@ -109,6 +109,9 @@ namespace TypeSystemTests
         protected override bool ComputeHasGCStaticBase(FieldDesc field)
         {
             Debug.Assert(field.IsStatic);
+
+            if (field.IsThreadStatic)
+                return true;
 
             TypeDesc fieldType = field.FieldType;
             if (fieldType.IsValueType)

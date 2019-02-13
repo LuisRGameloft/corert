@@ -66,7 +66,6 @@ internal static string System.SR.GetResourceString(string resourceKey)
 internal static string System.SR.GetResourceString(string resourceKey, string defaultString)
 
 # System.Runtime.RuntimeImports
-internal static extern void System.Runtime.RuntimeImports._ecvt_s(byte* buffer, int sizeInBytes, double value, int count, int* dec, int* sign)
 internal static extern double System.Runtime.RuntimeImports.acos(double x)
 internal static extern bool System.Runtime.RuntimeImports.AreTypesAssignable(System.EETypePtr pSourceType, System.EETypePtr pTargetType)
 internal static extern bool System.Runtime.RuntimeImports.AreTypesEquivalent(System.EETypePtr pType1, System.EETypePtr pType2)
@@ -169,13 +168,11 @@ public static System.Runtime.CompilerServices.AsyncTaskMethodBuilder System.Runt
 public void System.Runtime.CompilerServices.AsyncTaskMethodBuilder.SetStateMachine(System.Runtime.CompilerServices.IAsyncStateMachine stateMachine)
 public void System.Runtime.CompilerServices.AsyncTaskMethodBuilder.AwaitOnCompleted<TAwaiter, TStateMachine>(ref TAwaiter awaiter, ref TStateMachine stateMachine)
 public void System.Runtime.CompilerServices.AsyncTaskMethodBuilder.AwaitUnsafeOnCompleted<TAwaiter, TStateMachine>(ref TAwaiter awaiter, ref TStateMachine stateMachine)
-private void System.Runtime.CompilerServices.AsyncTaskMethodBuilder.EnsureTaskCreated()
 public void System.Runtime.CompilerServices.AsyncTaskMethodBuilder.Start<TStateMachine>(ref TStateMachine stateMachine)
 public void System.Runtime.CompilerServices.AsyncTaskMethodBuilder.SetResult()
 public void System.Runtime.CompilerServices.AsyncTaskMethodBuilder.SetException(System.Exception exception)
-internal static void System.Runtime.CompilerServices.AsyncTaskMethodBuilder.SetException(System.Threading.Tasks.Task task, System.Exception exception)
 internal void System.Runtime.CompilerServices.AsyncTaskMethodBuilder.SetNotificationForWaitCompletion(bool enabled)
-private object System.Runtime.CompilerServices.AsyncTaskMethodBuilder.ObjectIdForDebugger.get
+internal object System.Runtime.CompilerServices.AsyncTaskMethodBuilder.ObjectIdForDebugger.get
 public System.Threading.Tasks.Task System.Runtime.CompilerServices.AsyncTaskMethodBuilder.Task.get
 
 # System.Runtime.CompilerServices.RuntimeHelpers
@@ -215,13 +212,10 @@ public string System.IntPtr.ToString(string format)
 private static System.Text.StringBuilder System.Text.StringBuilderCache.t_cachedInstance
 private int string._stringLength
 private char string._firstChar
-private void* System.IntPtr._value
-private static volatile System.Collections.Generic.ArraySortHelper<TKey, TValue> System.Collections.Generic.ArraySortHelper<TKey, TValue>.s_defaultArraySortHelper
+private readonly void* System.IntPtr._value
 private static volatile System.Globalization.CultureInfo System.Globalization.CultureInfo.s_DefaultThreadCurrentCulture
 private static volatile System.Globalization.CultureInfo System.Globalization.CultureInfo.s_DefaultThreadCurrentUICulture
 private static readonly System.Globalization.CultureInfo System.Globalization.CultureInfo.s_InvariantCultureInfo
-private System.Threading.Tasks.Task System.Runtime.CompilerServices.AsyncVoidMethodBuilder.m_task
-private System.Threading.Tasks.Task<System.Threading.Tasks.VoidTaskResult> System.Runtime.CompilerServices.AsyncTaskMethodBuilder.m_task
 private System.Threading.Tasks.Task<TResult> System.Runtime.CompilerServices.AsyncTaskMethodBuilder<TResult>.m_task
 private volatile int System.Threading.Tasks.Task.m_taskId
 internal volatile int System.Threading.Tasks.Task.m_stateFlags

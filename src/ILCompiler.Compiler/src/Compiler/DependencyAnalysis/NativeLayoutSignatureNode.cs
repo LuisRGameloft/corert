@@ -21,6 +21,8 @@ namespace ILCompiler.DependencyAnalysis
         private Utf8String _identityPrefix;
         private NativeLayoutSavedVertexNode _nativeSignature;
 
+        public TypeSystemEntity Identity => _identity;
+
         public NativeLayoutSignatureNode(NativeLayoutSavedVertexNode nativeSignature, TypeSystemEntity identity, Utf8String identityPrefix)
         {
             _nativeSignature = nativeSignature;
@@ -85,9 +87,9 @@ namespace ILCompiler.DependencyAnalysis
             return objData.ToObjectData();
         }
 
-        protected internal override int ClassCode => 1887049331;
+        public override int ClassCode => 1887049331;
 
-        protected internal override int CompareToImpl(SortableDependencyNode other, CompilerComparer comparer)
+        public override int CompareToImpl(ISortableNode other, CompilerComparer comparer)
         {
             NativeLayoutSignatureNode otherSignature = (NativeLayoutSignatureNode)other;
             if (_identity is MethodDesc)

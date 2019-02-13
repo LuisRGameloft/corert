@@ -66,6 +66,13 @@ namespace Internal.TypeSystem
             return null;
         }
 
+        internal virtual ModuleDesc ResolveModule(IAssemblyDesc referencingModule, string fileName, bool throwIfNotFound = true)
+        {
+            if (throwIfNotFound)
+                throw new NotSupportedException();
+            return null;
+        }
+
         //
         // Array types
         //

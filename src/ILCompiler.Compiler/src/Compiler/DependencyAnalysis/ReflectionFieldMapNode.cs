@@ -157,9 +157,9 @@ namespace ILCompiler.DependencyAnalysis
                                         uint index = _externalReferences.GetIndex(staticsNode, field.Offset.AsInt);
                                         vertex = writer.GetTuple(vertex, writer.GetUnsignedConstant(index));
                                     }
-                                    else
+                                    else if (factory.Target.Abi == TargetAbi.CoreRT || factory.Target.Abi == TargetAbi.CppCodegen)
                                     {
-                                        Debug.Assert(field.HasGCStaticBase && factory.Target.Abi == TargetAbi.CoreRT);
+                                        Debug.Assert(field.HasGCStaticBase);
 
                                         uint index = _externalReferences.GetIndex(staticsNode);
                                         vertex = writer.GetTuple(vertex, writer.GetUnsignedConstant(index));
@@ -187,6 +187,6 @@ namespace ILCompiler.DependencyAnalysis
         }
 
         protected internal override int Phase => (int)ObjectNodePhase.Ordered;
-        protected internal override int ClassCode => (int)ObjectNodeOrder.ReflectionFieldMapNode;
+        public override int ClassCode => (int)ObjectNodeOrder.ReflectionFieldMapNode;
     }
 }

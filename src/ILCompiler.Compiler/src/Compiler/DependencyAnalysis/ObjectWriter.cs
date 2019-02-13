@@ -21,7 +21,7 @@ namespace ILCompiler.DependencyAnalysis
     /// <summary>
     /// Object writer using src/Native/ObjWriter
     /// </summary>
-    internal class ObjectWriter : IDisposable, ITypesDebugInfoWriter
+    public class ObjectWriter : IDisposable, ITypesDebugInfoWriter
     {
         // This is used to build mangled names
         private Utf8StringBuilder _sb = new Utf8StringBuilder();
@@ -78,7 +78,7 @@ namespace ILCompiler.DependencyAnalysis
 #endif
 
         [DllImport(NativeObjectWriterFileName)]
-        private static extern IntPtr InitObjWriter(string objectFilePath);
+        private static extern IntPtr InitObjWriter(string objectFilePath, string triple = null);
 
         [DllImport(NativeObjectWriterFileName)]
         private static extern void FinishObjWriter(IntPtr objWriter);
@@ -194,16 +194,6 @@ namespace ILCompiler.DependencyAnalysis
         private static extern int EmitSymbolRef(IntPtr objWriter, byte[] symbolName, RelocType relocType, int delta);
         public int EmitSymbolRef(Utf8StringBuilder symbolName, RelocType relocType, int delta = 0)
         {
-            if (_targetPlatform.Architecture != TargetArchitecture.ARMEL && _targetPlatform.Architecture != TargetArchitecture.ARM)
-            {
-                // Workaround for ObjectWriter's lack of support for IMAGE_REL_BASED_RELPTR32
-                // https://github.com/dotnet/corert/issues/3278
-                if (relocType == RelocType.IMAGE_REL_BASED_RELPTR32)
-                {
-                    relocType = RelocType.IMAGE_REL_BASED_REL32;
-                    delta = checked(delta + sizeof(int));
-                }
-            }
             return EmitSymbolRef(_nativeObjectWriter, symbolName.Append('\0').UnderlyingArray, relocType, delta);
         }
 
@@ -275,7 +265,12 @@ namespace ILCompiler.DependencyAnalysis
         private static extern uint GetClassTypeIndex(IntPtr objWriter, ClassTypeDescriptor classTypeDescriptor);
 
         [DllImport(NativeObjectWriterFileName)]
-        private static extern uint GetCompleteClassTypeIndex(IntPtr objWriter, ClassTypeDescriptor classTypeDescriptor, ClassFieldsTypeDescriptor classFieldsTypeDescriptior, DataFieldDescriptor[] fields);
+        private static extern uint GetCompleteClassTypeIndex(IntPtr objWriter, ClassTypeDescriptor classTypeDescriptor,
+                                                             ClassFieldsTypeDescriptor classFieldsTypeDescriptior, DataFieldDescriptor[] fields,
+                                                             StaticDataFieldDescriptor[] statics);
+
+        [DllImport(NativeObjectWriterFileName)]
+        private static extern uint GetPrimitiveTypeIndex(IntPtr objWriter, int type);
 
         [DllImport(NativeObjectWriterFileName)]
         private static extern void EmitARMFnStart(IntPtr objWriter);
@@ -316,9 +311,16 @@ namespace ILCompiler.DependencyAnalysis
             return GetClassTypeIndex(_nativeObjectWriter, classTypeDescriptor);
         }
 
-        public uint GetCompleteClassTypeIndex(ClassTypeDescriptor classTypeDescriptor, ClassFieldsTypeDescriptor classFieldsTypeDescriptior, DataFieldDescriptor[] fields)
+        public uint GetCompleteClassTypeIndex(ClassTypeDescriptor classTypeDescriptor, ClassFieldsTypeDescriptor classFieldsTypeDescriptior,
+                                              DataFieldDescriptor[] fields, StaticDataFieldDescriptor[] statics)
         {
-            return GetCompleteClassTypeIndex(_nativeObjectWriter, classTypeDescriptor, classFieldsTypeDescriptior, fields);
+            return GetCompleteClassTypeIndex(_nativeObjectWriter, classTypeDescriptor, classFieldsTypeDescriptior, fields, statics);
+        }
+
+        public uint GetPrimitiveTypeIndex(TypeDesc type)
+        {
+            Debug.Assert(type.IsPrimitive, "it is not a primitive type");
+            return GetPrimitiveTypeIndex(_nativeObjectWriter, (int)type.Category);
         }
 
         [DllImport(NativeObjectWriterFileName)]
@@ -372,10 +374,42 @@ namespace ILCompiler.DependencyAnalysis
         }
 
         [DllImport(NativeObjectWriterFileName)]
-        private static extern void EmitDebugFunctionInfo(IntPtr objWriter, byte[] methodName, int methodSize);
-        public void EmitDebugFunctionInfo(int methodSize)
+        private static extern void EmitDebugEHClause(IntPtr objWriter, UInt32 TryOffset, UInt32 TryLength, UInt32 HandlerOffset, UInt32 HandlerLength);
+
+        public void EmitDebugEHClause(DebugEHClauseInfo ehClause)
         {
-            EmitDebugFunctionInfo(_nativeObjectWriter, _currentNodeZeroTerminatedName.UnderlyingArray, methodSize);
+            EmitDebugEHClause(_nativeObjectWriter, ehClause.TryOffset, ehClause.TryLength, ehClause.HandlerOffset, ehClause.HandlerLength);
+        }
+
+        public void EmitDebugEHClauseInfo(ObjectNode node)
+        {
+            var nodeWithCodeInfo = node as INodeWithCodeInfo;
+            if (nodeWithCodeInfo != null)
+            {
+                DebugEHClauseInfo[] clauses = nodeWithCodeInfo.DebugEHClauseInfos;
+                if (clauses != null)
+                {
+                    foreach (var clause in clauses)
+                    {
+                        EmitDebugEHClause(clause);
+                    }
+                }
+            }
+        }
+
+        [DllImport(NativeObjectWriterFileName)]
+        private static extern void EmitDebugFunctionInfo(IntPtr objWriter, byte[] methodName, int methodSize, UInt32 methodTypeIndex);
+        public void EmitDebugFunctionInfo(ObjectNode node, int methodSize)
+        {
+            uint methodTypeIndex = 0;
+
+            var methodNode = node as IMethodNode;
+            if (methodNode != null)
+            {
+                methodTypeIndex = _userDefinedTypeDescriptor.GetMethodFunctionIdTypeIndex(methodNode.Method);
+            }
+
+            EmitDebugFunctionInfo(_nativeObjectWriter, _currentNodeZeroTerminatedName.UnderlyingArray, methodSize, methodTypeIndex);
         }
 
         [DllImport(NativeObjectWriterFileName)]
@@ -661,12 +695,10 @@ namespace ILCompiler.DependencyAnalysis
 
         public void EmitCFICodes(int offset)
         {
-            bool forArm = (_targetPlatform.Architecture == TargetArchitecture.ARMEL || _targetPlatform.Architecture == TargetArchitecture.ARM);
-
             // Emit end the old frame before start a frame.
             if (_offsetToCfiEnd.Contains(offset))
             {
-                if (forArm)
+                if (_targetPlatform.Architecture == TargetArchitecture.ARM)
                     EmitARMFnEnd();
                 else
                     EmitCFIEnd(offset);
@@ -674,7 +706,7 @@ namespace ILCompiler.DependencyAnalysis
 
             if (_offsetToCfiStart.Contains(offset))
             {
-                if (forArm)
+                if (_targetPlatform.Architecture == TargetArchitecture.ARM)
                     EmitARMFnStart();
                 else
                     EmitCFIStart(offset);
@@ -682,7 +714,7 @@ namespace ILCompiler.DependencyAnalysis
                 byte[] blobSymbolName;
                 if (_offsetToCfiLsdaBlobName.TryGetValue(offset, out blobSymbolName))
                 {
-                    if (forArm)
+                    if (_targetPlatform.Architecture == TargetArchitecture.ARM)
                         EmitARMExIdxLsda(blobSymbolName);
                     else
                         EmitCFILsda(blobSymbolName);
@@ -701,10 +733,14 @@ namespace ILCompiler.DependencyAnalysis
             {
                 foreach (byte[] cfi in cfis)
                 {
-                    if (forArm)
+                    if (_targetPlatform.Architecture == TargetArchitecture.ARM)
+                    {
                         EmitARMExIdxCode(offset, cfi);
+                    }
                     else
+                    {
                         EmitCFICode(offset, cfi);
+                    }
                 }
             }
         }
@@ -842,7 +878,9 @@ namespace ILCompiler.DependencyAnalysis
 
         public ObjectWriter(string objectFilePath, NodeFactory factory)
         {
-            _nativeObjectWriter = InitObjWriter(objectFilePath);
+            var triple = GetLLVMTripleFromTarget(factory.Target);
+
+            _nativeObjectWriter = InitObjWriter(objectFilePath, triple);
             if (_nativeObjectWriter == IntPtr.Zero)
             {
                 throw new IOException("Fail to initialize Native Object Writer");
@@ -926,27 +964,27 @@ namespace ILCompiler.DependencyAnalysis
                 ObjectNodeSection managedCodeSection;
                 if (factory.Target.OperatingSystem == TargetOS.Windows)
                 {
-                    managedCodeSection = MethodCodeNode.WindowsContentSection;
+                    managedCodeSection = ObjectNodeSection.ManagedCodeWindowsContentSection;
 
                     // Emit sentinels for managed code section.
                     ObjectNodeSection codeStartSection = factory.CompilationModuleGroup.IsSingleFileCompilation ?
-                                                            MethodCodeNode.StartSection :
-                                                            objectWriter.GetSharedSection(MethodCodeNode.StartSection, "__managedcode_a");
+                                                            ObjectNodeSection.ManagedCodeStartSection :
+                                                            objectWriter.GetSharedSection(ObjectNodeSection.ManagedCodeStartSection, "__managedcode_a");
                     objectWriter.SetSection(codeStartSection);
                     objectWriter.EmitSymbolDef(new Utf8StringBuilder().Append("__managedcode_a"));
                     objectWriter.EmitIntValue(0, 1);
                     ObjectNodeSection codeEndSection = factory.CompilationModuleGroup.IsSingleFileCompilation ?
-                                                            MethodCodeNode.EndSection :
-                                                            objectWriter.GetSharedSection(MethodCodeNode.EndSection, "__managedcode_z");
+                                                            ObjectNodeSection.ManagedCodeEndSection :
+                                                            objectWriter.GetSharedSection(ObjectNodeSection.ManagedCodeEndSection, "__managedcode_z");
                     objectWriter.SetSection(codeEndSection);
                     objectWriter.EmitSymbolDef(new Utf8StringBuilder().Append("__managedcode_z"));
                     objectWriter.EmitIntValue(1, 1);
                 }
                 else
                 {
-                    managedCodeSection = MethodCodeNode.UnixContentSection;
+                    managedCodeSection = ObjectNodeSection.ManagedCodeUnixContentSection;
                     // TODO 2916: managed code section has to be created here, switch is not necessary.
-                    objectWriter.SetSection(MethodCodeNode.UnixContentSection);
+                    objectWriter.SetSection(ObjectNodeSection.ManagedCodeUnixContentSection);
                     objectWriter.SetSection(LsdaSection);
                 }
                 objectWriter.SetCodeSectionAttribute(managedCodeSection);
@@ -1004,7 +1042,7 @@ namespace ILCompiler.DependencyAnalysis
                     // The DWARF CFI unwind is implemented for AMD64 & ARM32 only.
                     TargetArchitecture tarch = factory.Target.Architecture;
                     if (!factory.Target.IsWindows &&
-                        (tarch == TargetArchitecture.X64 || tarch == TargetArchitecture.ARMEL || tarch == TargetArchitecture.ARM))
+                        (tarch == TargetArchitecture.X64 || tarch == TargetArchitecture.ARM))
                         objectWriter.BuildCFIMap(factory, node);
 
                     // Build debug location map
@@ -1113,13 +1151,9 @@ namespace ILCompiler.DependencyAnalysis
 
                     if (objectWriter.HasFunctionDebugInfo())
                     {
-                        if (factory.Target.OperatingSystem == TargetOS.Windows)
-                        {
-                            // Build debug local var info.
-                            // It currently supports only Windows CodeView format.
-                            objectWriter.EmitDebugVarInfo(node);
-                        }
-                        objectWriter.EmitDebugFunctionInfo(nodeContents.Data.Length);
+                        objectWriter.EmitDebugVarInfo(node);
+                        objectWriter.EmitDebugEHClauseInfo(node);
+                        objectWriter.EmitDebugFunctionInfo(node, nodeContents.Data.Length);
                     }
                 }
 
@@ -1168,6 +1202,69 @@ namespace ILCompiler.DependencyAnalysis
         uint ITypesDebugInfoWriter.GetMemberFunctionId(MemberFunctionIdTypeDescriptor memberIdDescriptor)
         {
             return GetMemberFunctionIdTypeIndex(_nativeObjectWriter, memberIdDescriptor);
+        }
+
+        private static string GetLLVMTripleFromTarget(TargetDetails target)
+        {
+            // We create a triple based on the Target
+            // See https://clang.llvm.org/docs/CrossCompilation.html#target-triple
+            // Detect the LLVM arch
+            string arch;
+            // Not used
+            string sub = string.Empty;
+            switch (target.Architecture)
+            {
+                case TargetArchitecture.ARM:
+                    arch = "thumbv7";
+                    break;
+                case TargetArchitecture.ARM64:
+                    arch = "aarch64";
+                    break;
+                case TargetArchitecture.X64:
+                    arch = "x86_64";
+                    break;
+                case TargetArchitecture.X86:
+                    arch = "x86";
+                    break;
+                case TargetArchitecture.Wasm32:
+                    arch = "wasm32";
+                    break;
+                default:
+                    throw new InvalidOperationException($"The architecture `{target.Architecture}` is not supported by ObjectWriter");
+            }
+
+            string vendor;
+            string sys;
+            string abi;
+            switch (target.OperatingSystem)
+            {
+                case TargetOS.Windows:
+                    vendor = "pc";
+                    sys = "win32";
+                    abi = "windows";
+                    break;
+                case TargetOS.Linux:
+                case TargetOS.FreeBSD:
+                case TargetOS.NetBSD:
+                    vendor = "pc";
+                    sys = "linux";
+                    abi = "elf";
+                    break;
+                case TargetOS.OSX:
+                    vendor = "apple";
+                    sys = "darwin";
+                    abi = "macho";
+                    break;
+                case TargetOS.WebAssembly:
+                    vendor = "unknown";
+                    sys = "unknown";
+                    abi = "wasm";
+                    break;
+                default:
+                    throw new InvalidOperationException($"The operating system `{target.OperatingSystem}` is not supported by ObjectWriter");
+            }
+
+            return $"{arch}{sub}-{vendor}-{sys}-{abi}";
         }
     }
 }

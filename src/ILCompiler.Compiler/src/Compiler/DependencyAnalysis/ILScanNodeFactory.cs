@@ -37,10 +37,6 @@ namespace ILCompiler.DependencyAnalysis
                 {
                     return new RuntimeImportMethodNode(method);
                 }
-
-                // On CLR this would throw a SecurityException with "ECall methods must be packaged into a system module."
-                // This is a corner case that nobody is likely to care about.
-                ThrowHelper.ThrowInvalidProgramException(ExceptionStringID.InvalidProgramSpecific, method);
             }
 
             if (CompilationModuleGroup.ContainsMethodBody(method, false))
@@ -63,7 +59,7 @@ namespace ILCompiler.DependencyAnalysis
                 // 'this' and also provides an instantiation argument (we do a calling convention conversion).
                 // We don't do this for generic instance methods though because they don't use the EEType
                 // for the generic context anyway.
-                return new ScannedMethodNode(TypeSystemContext.GetSpecialUnboxingThunk(method, CompilationModuleGroup.GeneratedAssembly));
+                return new ScannedMethodNode(TypeSystemContext.GetSpecialUnboxingThunk(method, TypeSystemContext.GeneratedAssembly));
             }
             else
             {
@@ -74,7 +70,7 @@ namespace ILCompiler.DependencyAnalysis
 
         protected override ISymbolNode CreateReadyToRunHelperNode(ReadyToRunHelperKey helperCall)
         {
-            return new ReadyToRunHelperNode(this, helperCall.HelperId, helperCall.Target);
+            return new ReadyToRunHelperNode(helperCall.HelperId, helperCall.Target);
         }
     }
 }

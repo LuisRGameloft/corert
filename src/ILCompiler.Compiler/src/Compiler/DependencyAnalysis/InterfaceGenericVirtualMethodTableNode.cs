@@ -15,7 +15,7 @@ namespace ILCompiler.DependencyAnalysis
     /// <summary>
     /// Represents a map between reflection metadata and generated method bodies.
     /// </summary>
-    internal sealed class InterfaceGenericVirtualMethodTableNode : ObjectNode, ISymbolDefinitionNode
+    public sealed class InterfaceGenericVirtualMethodTableNode : ObjectNode, ISymbolDefinitionNode
     {
         private ObjectAndOffsetSymbolNode _endSymbol;
         private ExternalReferencesTableNode _externalReferences;
@@ -214,6 +214,6 @@ namespace ILCompiler.DependencyAnalysis
         }
 
         protected internal override int Phase => (int)ObjectNodePhase.Ordered;
-        protected internal override int ClassCode => (int)ObjectNodeOrder.InterfaceGenericVirtualMethodTableNode;
+        public override int ClassCode => (int)ObjectNodeOrder.InterfaceGenericVirtualMethodTableNode;
     }
 }

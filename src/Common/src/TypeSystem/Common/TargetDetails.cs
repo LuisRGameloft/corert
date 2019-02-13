@@ -14,9 +14,7 @@ namespace Internal.TypeSystem
     {
         Unknown,
         ARM,
-        ARMEL,
         ARM64,
-        Cpp64,
         X64,
         X86,
         Wasm32,
@@ -50,7 +48,11 @@ namespace Internal.TypeSystem
         /// <summary>
         /// Jit runtime ABI
         /// </summary>
-        Jit
+        Jit,
+        /// <summary>
+        /// Cross-platform portable C++ codegen
+        /// </summary>
+        CppCodegen,
     }
 
     /// <summary>
@@ -91,10 +93,8 @@ namespace Internal.TypeSystem
                 {
                     case TargetArchitecture.ARM64:
                     case TargetArchitecture.X64:
-                    case TargetArchitecture.Cpp64:
                         return 8;
                     case TargetArchitecture.ARM:
-                    case TargetArchitecture.ARMEL:
                     case TargetArchitecture.X86:
                     case TargetArchitecture.Wasm32:
                         return 4;
@@ -104,14 +104,39 @@ namespace Internal.TypeSystem
             }
         }
 
-        /// <summary>
-        /// Gets the maximum alignment to which something can be aligned
-        /// </summary>
-        public static int MaximumAlignment
+        public bool SupportsRelativePointers
         {
             get
             {
-                return 8;
+                return (Abi != TargetAbi.CppCodegen) && (Architecture != TargetArchitecture.Wasm32);
+            }
+        }
+
+        /// <summary>
+        /// Gets the maximum alignment to which something can be aligned
+        /// </summary>
+        public int MaximumAlignment
+        {
+            get
+            {
+                if (Abi == TargetAbi.ProjectN)
+                {
+                    // ProjectN doesn't support hardware intrinsics
+                    return 8;
+                }
+                else if (Architecture == TargetArchitecture.ARM)
+                {
+                    // Corresponds to alignment required for __m128 (there's no __m256)
+                    return 8;
+                }
+                else if (Architecture == TargetArchitecture.ARM64)
+                {
+                    // Corresponds to alignmet required for __m256
+                    return 16;
+                }
+
+                // 256-bit vector is the type with the higest alignment we support
+                return 32;
             }
         }
 
@@ -124,8 +149,14 @@ namespace Internal.TypeSystem
         {
             get
             {
-                // We use default packing size of 8 irrespective of the platform.
-                return 8;
+                if (Abi == TargetAbi.ProjectN)
+                {
+                    // We use default packing size of 8 irrespective of the platform to match NUTC.
+                    return 8;
+                }
+
+                // We use default packing size of 32 irrespective of the platform.
+                return 32;
             }
         }
 
@@ -150,7 +181,6 @@ namespace Internal.TypeSystem
                 switch (Architecture)
                 {
                     case TargetArchitecture.ARM:
-                    case TargetArchitecture.ARMEL:
                         return 2;
                     case TargetArchitecture.ARM64:
                         return 4;
@@ -165,6 +195,28 @@ namespace Internal.TypeSystem
             Architecture = architecture;
             OperatingSystem = targetOS;
             Abi = abi;
+        }
+
+        /// <summary>
+        /// Gets the dyadic logarithm of the maximum size of a primitive type
+        /// </summary>
+        public static int MaximumLog2PrimitiveSize
+        {
+            get
+            {
+                return 3;
+            }
+        }
+
+        /// <summary>
+        /// Gets the maximum size of a primitive type
+        /// </summary>
+        public static int MaximumPrimitiveSize
+        {
+            get
+            {
+                return 1 << MaximumLog2PrimitiveSize;
+            }
         }
 
         /// <summary>
@@ -224,7 +276,6 @@ namespace Internal.TypeSystem
             switch (Architecture)
             {
                 case TargetArchitecture.ARM:
-                case TargetArchitecture.ARMEL:
                     // ARM supports two alignments for objects on the GC heap (4 byte and 8 byte)
                     if (fieldAlignment.IsIndeterminate)
                         return LayoutInt.Indeterminate;
@@ -235,7 +286,6 @@ namespace Internal.TypeSystem
                         return new LayoutInt(8);
                 case TargetArchitecture.X64:
                 case TargetArchitecture.ARM64:
-                case TargetArchitecture.Cpp64:
                     return new LayoutInt(8);
                 case TargetArchitecture.X86:
                 case TargetArchitecture.Wasm32:
@@ -266,7 +316,6 @@ namespace Internal.TypeSystem
                 // There is a hard limit of 4 elements on an HFA type, see
                 // http://blogs.msdn.com/b/vcblog/archive/2013/07/12/introducing-vector-calling-convention.aspx
                 Debug.Assert(Architecture == TargetArchitecture.ARM ||
-                    Architecture == TargetArchitecture.ARMEL ||
                     Architecture == TargetArchitecture.ARM64 ||
                     Architecture == TargetArchitecture.X64 ||
                     Architecture == TargetArchitecture.X86);

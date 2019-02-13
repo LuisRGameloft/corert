@@ -956,9 +956,11 @@ namespace System.Globalization
                             if (this.SENGLISHLANGUAGE[this.SENGLISHLANGUAGE.Length - 1] == ')')
                             {
                                 // "Azeri (Latin)" + "Azerbaijan" -> "Azeri (Latin, Azerbaijan)"
-                                _sEnglishDisplayName =
-                                    this.SENGLISHLANGUAGE.Substring(0, _sEnglishLanguage.Length - 1) +
-                                    ", " + this.SENGCOUNTRY + ")";
+                                _sEnglishDisplayName = string.Concat(
+                                    this.SENGLISHLANGUAGE.AsSpan(0, _sEnglishLanguage.Length - 1),
+                                    ", ",
+                                    this.SENGCOUNTRY,
+                                    ")");
                             }
                             else
                             {
@@ -1645,7 +1647,7 @@ namespace System.Globalization
                             sep = "";
                         }
 
-                        time = time.Substring(0, j) + sep + time.Substring(endIndex);
+                        time = string.Concat(time.AsSpan(0, j), sep, time.AsSpan(endIndex));
                         break;
                     case 'm':
                     case 'H':
@@ -1852,7 +1854,7 @@ namespace System.Globalization
 
                         // It worked, remember the list
                         CalendarId[] temp = new CalendarId[count];
-                        Array.Copy(calendars, temp, count);
+                        Array.Copy(calendars, 0, temp, 0, count);
 
                         // Want 1st calendar to be default
                         // Prior to Vista the enumeration didn't have default calendar first
@@ -2134,6 +2136,17 @@ namespace System.Globalization
         // Date separator (derived from short date format)
         internal string DateSeparator(CalendarId calendarId)
         {
+            if (calendarId == CalendarId.JAPAN && !LocalAppContextSwitches.EnforceLegacyJapaneseDateParsing)
+            {
+                // The date separator is derived from the default short date pattern. So far this pattern is using
+                // '/' as date separator when using the Japanese calendar which make the formatting and parsing work fine.
+                // changing the default pattern is likely will happen in the near future which can easily break formatting
+                // and parsing.
+                // We are forcing here the date separator to '/' to ensure the parsing is not going to break when changing
+                // the default short date pattern. The application still can override this in the code by DateTimeFormatInfo.DateSeparartor.
+                return "/";
+            }
+
             return GetDateSeparator(ShortDates(calendarId)[0]);
         }
 
@@ -2268,7 +2281,7 @@ namespace System.Globalization
             for (int i = startIndex; i < format.Length; ++i)
             {
                 // See if we have a time Part
-                if (!inQuote && timeParts.IndexOf(format[i]) != -1)
+                if (!inQuote && timeParts.Contains(format[i]))
                 {
                     return i;
                 }
@@ -2348,7 +2361,7 @@ namespace System.Globalization
                 nfi.nativeDigits = new string[10];
                 for (int i = 0; i < nfi.nativeDigits.Length; i++)
                 {
-                    nfi.nativeDigits[i] = new string(digits[i], 1);
+                    nfi.nativeDigits[i] = char.ToString(digits[i]);
                 }
 
                 nfi.digitSubstitution = GetDigitSubstitution(_sRealName);
@@ -2396,35 +2409,8 @@ namespace System.Globalization
 
         // Helper
         // This is ONLY used for caching names and shouldn't be used for anything else
-        internal static string AnsiToLower(string testString)
-        {
-            int index = 0;
-
-            while (index<testString.Length && (testString[index]<'A' || testString[index]>'Z' ))
-            {
-                index++;
-            }
-            if (index >= testString.Length)
-            {
-                return testString; // we didn't really change the string
-            }
-
-            StringBuilder sb = new StringBuilder(testString.Length);
-            for (int i=0; i<index; i++)
-            {
-                sb.Append(testString[i]);
-            }
-
-            sb.Append((char) (testString[index] -'A' + 'a'));
-
-            for (int ich = index+1; ich < testString.Length; ich++)
-            {
-                char ch = testString[ich];
-                sb.Append(ch <= 'Z' && ch >= 'A' ? (char)(ch - 'A' + 'a') : ch);
-            }
-
-            return (sb.ToString());
-        }
+        internal static string AnsiToLower(string testString) =>
+            TextInfo.ToLowerAsciiInvariant(testString);
 
         /// <remarks>
         /// The numeric values of the enum members match their Win32 counterparts.  The CultureData Win32 PAL implementation

@@ -13,9 +13,9 @@ using Internal.NativeFormat;
 namespace ILCompiler.DependencyAnalysis
 {
     /// <summary>
-    /// Represents a map between reflection metadata and generated method bodies.
+    /// Represents a map of generic virtual method implementations.
     /// </summary>
-    internal sealed class GenericVirtualMethodTableNode : ObjectNode, ISymbolDefinitionNode
+    public sealed class GenericVirtualMethodTableNode : ObjectNode, ISymbolDefinitionNode
     {
         private ObjectAndOffsetSymbolNode _endSymbol;
         private ExternalReferencesTableNode _externalReferences;
@@ -145,6 +145,6 @@ namespace ILCompiler.DependencyAnalysis
         }
 
         protected internal override int Phase => (int)ObjectNodePhase.Ordered;
-        protected internal override int ClassCode => (int)ObjectNodeOrder.GenericVirtualMethodTableNode;
+        public override int ClassCode => (int)ObjectNodeOrder.GenericVirtualMethodTableNode;
     }
 }

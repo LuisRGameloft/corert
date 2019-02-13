@@ -49,6 +49,18 @@ namespace System.Runtime.InteropServices
                 return (dwLastError & 0x0000FFFF) | unchecked((int)0x80070000);
         }
 
+        [MethodImplAttribute(MethodImplOptions.NoInlining)]
+        public static int GetHRForException(Exception e)
+        {
+            if (e == null)
+            {
+                return HResults.S_OK;
+            }
+
+            // @TODO: Setup IErrorInfo
+            return e.HResult;
+        }
+
         public static unsafe IntPtr AllocHGlobal(IntPtr cb)
         {
             return MemAlloc(cb);
@@ -443,17 +455,17 @@ namespace System.Runtime.InteropServices
         #endregion
 
         #region String marshalling
-        public static unsafe String PtrToStringUni(IntPtr ptr, int len)
+        public static unsafe string PtrToStringUni(IntPtr ptr, int len)
         {
             if (ptr == IntPtr.Zero)
                 throw new ArgumentNullException(nameof(ptr));
             if (len < 0)
                 throw new ArgumentException(nameof(len));
 
-            return new String((char*)ptr, 0, len);
+            return new string((char*)ptr, 0, len);
         }
 
-        public static unsafe String PtrToStringUni(IntPtr ptr)
+        public static unsafe string PtrToStringUni(IntPtr ptr)
         {
             if (IntPtr.Zero == ptr)
             {
@@ -465,7 +477,7 @@ namespace System.Runtime.InteropServices
             }
             else
             {
-                return new String((char*)ptr);
+                return new string((char*)ptr);
             }
         }
 
@@ -553,7 +565,7 @@ namespace System.Runtime.InteropServices
             int lenUnicode;
             CalculateStringLength(pchBuffer, out lenAnsi, out lenUnicode);
 
-            string result = String.Empty;
+            string result = string.Empty;
 
             if (lenUnicode > 0)
             {
@@ -768,7 +780,7 @@ namespace System.Runtime.InteropServices
             int lenAnsi = GetAnsiStringLen(pchBuffer);
             int lenUnicode = charCount;
 
-            string result = String.Empty;
+            string result = string.Empty;
 
             if (lenUnicode > 0)
             {

@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using System;
 using System.Collections.Generic;
 
 using Internal.TypeSystem;
@@ -23,6 +24,7 @@ namespace ILCompiler
     {
         private readonly CompilationModuleGroup _compilationModuleGroup;
 
+        internal readonly UsageBasedMetadataGenerationOptions _generationOptions;
         private readonly bool _hasPreciseFieldUsageInformation;
 
         private readonly List<ModuleDesc> _modulesWithMetadata = new List<ModuleDesc>();
@@ -34,13 +36,17 @@ namespace ILCompiler
             CompilationModuleGroup group,
             CompilerTypeSystemContext typeSystemContext,
             MetadataBlockingPolicy blockingPolicy,
+            ManifestResourceBlockingPolicy resourceBlockingPolicy,
             string logFile,
-            StackTraceEmissionPolicy stackTracePolicy)
-            : base(group.GeneratedAssembly, typeSystemContext, blockingPolicy, logFile, stackTracePolicy)
+            StackTraceEmissionPolicy stackTracePolicy,
+            DynamicInvokeThunkGenerationPolicy invokeThunkGenerationPolicy,
+            UsageBasedMetadataGenerationOptions generationOptions)
+            : base(typeSystemContext, blockingPolicy, resourceBlockingPolicy, logFile, stackTracePolicy, invokeThunkGenerationPolicy)
         {
             // We use this to mark places that would behave differently if we tracked exact fields used. 
             _hasPreciseFieldUsageInformation = false;
             _compilationModuleGroup = group;
+            _generationOptions = generationOptions;
         }
 
         protected override void Graph_NewMarkedNode(DependencyNodeCore<NodeFactory> obj)
@@ -150,6 +156,28 @@ namespace ILCompiler
                     {
                         dependencies = dependencies ?? new DependencyList();
                         dependencies.Add(factory.FieldMetadata(field), "Field of a reflectable type");
+                    }
+                }
+            }
+
+            // If anonymous type heuristic is turned on and this is an anonymous type, make sure we have
+            // method bodies for all properties. It's common to have anonymous types used with reflection
+            // and it's hard to specify them in RD.XML.
+            if ((_generationOptions & UsageBasedMetadataGenerationOptions.AnonymousTypeHeuristic) != 0)
+            {
+                if (type is MetadataType metadataType &&
+                    metadataType.HasInstantiation &&
+                    !metadataType.IsGenericDefinition &&
+                    metadataType.HasCustomAttribute("System.Runtime.CompilerServices", "CompilerGeneratedAttribute") &&
+                    metadataType.Name.Contains("AnonymousType"))
+                {
+                    foreach (MethodDesc method in type.GetMethods())
+                    {
+                        if (!method.Signature.IsStatic && method.IsSpecialName)
+                        {
+                            dependencies = dependencies ?? new DependencyList();
+                            dependencies.Add(factory.CanonicalEntrypoint(method), "Anonymous type accessor");
+                        }
                     }
                 }
             }
@@ -270,17 +298,14 @@ namespace ILCompiler
 
             foreach (var constructedType in GetTypesWithRuntimeMapping())
             {
-                if (!IsReflectionBlocked(constructedType))
-                {
-                    reflectableTypes[constructedType] |= MetadataCategory.RuntimeMapping;
+                reflectableTypes[constructedType] |= MetadataCategory.RuntimeMapping;
 
-                    // Also set the description bit if the definition is getting metadata.
-                    TypeDesc constructedTypeDefinition = constructedType.GetTypeDefinition();
-                    if (constructedType != constructedTypeDefinition &&
-                        (reflectableTypes[constructedTypeDefinition] & MetadataCategory.Description) != 0)
-                    {
-                        reflectableTypes[constructedType] |= MetadataCategory.Description;
-                    }
+                // Also set the description bit if the definition is getting metadata.
+                TypeDesc constructedTypeDefinition = constructedType.GetTypeDefinition();
+                if (constructedType != constructedTypeDefinition &&
+                    (reflectableTypes[constructedTypeDefinition] & MetadataCategory.Description) != 0)
+                {
+                    reflectableTypes[constructedType] |= MetadataCategory.Description;
                 }
             }
 
@@ -353,8 +378,8 @@ namespace ILCompiler
                 }
             }
 
-            return new AnalysisBasedMetadataManager(_compilationModuleGroup.GeneratedAssembly,
-                _typeSystemContext, _blockingPolicy, _metadataLogFile, _stackTraceEmissionPolicy,
+            return new AnalysisBasedMetadataManager(
+                _typeSystemContext, _blockingPolicy, _resourceBlockingPolicy, _metadataLogFile, _stackTraceEmissionPolicy, _dynamicInvokeThunkGenerationPolicy,
                 _modulesWithMetadata, reflectableTypes.ToEnumerable(), reflectableMethods.ToEnumerable(),
                 reflectableFields.ToEnumerable());
         }
@@ -437,5 +462,31 @@ namespace ILCompiler
                 return _explicitScopeMixin.GetModuleOfType(typeDef);
             }
         }
+    }
+
+    [Flags]
+    public enum UsageBasedMetadataGenerationOptions
+    {
+        None = 0,
+
+        /// <summary>
+        /// Specifies that complete metadata should be generated for types.
+        /// </summary>
+        /// <remarks>
+        /// If this option is set, generated metadata will no longer be pay for play,
+        /// and a certain class of bugs will disappear (APIs returning "member doesn't
+        /// exist" at runtime, even though the member exists and we just didn't generate the metadata).
+        /// Reflection blocking still applies.
+        /// </remarks>
+        CompleteTypesOnly = 1,
+
+        /// <summary>
+        /// Specifies that heuristic that makes anonymous types work should be applied.
+        /// </summary>
+        /// <remarks>
+        /// Generates method bodies for properties on anonymous types even if they're not
+        /// statically used.
+        /// </remarks>
+        AnonymousTypeHeuristic = 2,
     }
 }

@@ -14,7 +14,7 @@ namespace ILCompiler.DependencyAnalysis
     /// <summary>
     /// Represents a hashtable of all compiled generic method instantiations
     /// </summary>
-    internal sealed class GenericMethodsHashtableNode : ObjectNode, ISymbolDefinitionNode
+    public sealed class GenericMethodsHashtableNode : ObjectNode, ISymbolDefinitionNode
     {
         private ObjectAndOffsetSymbolNode _endSymbol;
         private ExternalReferencesTableNode _externalReferences;
@@ -126,6 +126,6 @@ namespace ILCompiler.DependencyAnalysis
         }
 
         protected internal override int Phase => (int)ObjectNodePhase.Ordered;
-        protected internal override int ClassCode => (int)ObjectNodeOrder.GenericMethodsHashtableNode;
+        public override int ClassCode => (int)ObjectNodeOrder.GenericMethodsHashtableNode;
     }
 }

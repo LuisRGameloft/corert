@@ -19,6 +19,8 @@ namespace ILCompiler.DependencyAnalysis
     {
         private bool _isUnboxingStub;
 
+        public bool IsUnboxingStub => _isUnboxingStub;
+
         public FatFunctionPointerNode(MethodDesc methodRepresented, bool isUnboxingStub)
         {
             // We should not create these for methods that don't have a canonical method body
@@ -56,13 +58,6 @@ namespace ILCompiler.DependencyAnalysis
 
         protected override string GetName(NodeFactory factory) => this.GetMangledName(factory.NameMangler);
 
-        protected override DependencyList ComputeNonRelocationBasedDependencies(NodeFactory factory)
-        {
-            DependencyList result = new DependencyList();
-            result.Add(new DependencyListEntry(factory.ShadowConcreteMethod(Method, _isUnboxingStub), "Method represented"));
-            return result;
-        }
-
         public override ObjectData GetData(NodeFactory factory, bool relocsOnly = false)
         {
             var builder = new ObjectDataBuilder(factory, relocsOnly);
@@ -97,22 +92,15 @@ namespace ILCompiler.DependencyAnalysis
             return builder.ToObjectData();
         }
 
-        protected internal override int ClassCode => 190463489;
+        public override int ClassCode => 190463489;
 
-        protected internal override int CompareToImpl(SortableDependencyNode other, CompilerComparer comparer)
+        public override int CompareToImpl(ISortableNode other, CompilerComparer comparer)
         {
             var compare = _isUnboxingStub.CompareTo(((FatFunctionPointerNode)other)._isUnboxingStub);
             if (compare != 0)
                 return compare;
 
             return comparer.Compare(Method, ((FatFunctionPointerNode)other).Method);
-        }
-
-        int ISortableSymbolNode.ClassCode => ClassCode;
-
-        int ISortableSymbolNode.CompareToImpl(ISortableSymbolNode other, CompilerComparer comparer)
-        {
-            return CompareToImpl((ObjectNode)other, comparer);
         }
     }
 }

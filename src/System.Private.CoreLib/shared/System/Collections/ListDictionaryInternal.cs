@@ -20,24 +20,18 @@ namespace System.Collections
     ///    This should not be used if performance is important for large numbers of elements.
     [Serializable]
     [System.Runtime.CompilerServices.TypeForwardedFrom("mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")]
-#if CORERT
-    public
-#else
-    internal
-#endif
-    class ListDictionaryInternal : IDictionary
+    // Needs to be public to support binary serialization compatibility
+    public class ListDictionaryInternal : IDictionary
     {
         private DictionaryNode head; // Do not rename (binary serialization)
         private int version; // Do not rename (binary serialization)
         private int count; // Do not rename (binary serialization)
-        [NonSerialized]
-        private Object _syncRoot;
 
         public ListDictionaryInternal()
         {
         }
 
-        public Object this[Object key]
+        public object this[object key]
         {
             get
             {
@@ -138,17 +132,7 @@ namespace System.Collections
             }
         }
 
-        public Object SyncRoot
-        {
-            get
-            {
-                if (_syncRoot == null)
-                {
-                    System.Threading.Interlocked.CompareExchange<Object>(ref _syncRoot, new Object(), null);
-                }
-                return _syncRoot;
-            }
-        }
+        public object SyncRoot => this;
 
         public ICollection Values
         {
@@ -158,7 +142,7 @@ namespace System.Collections
             }
         }
 
-        public void Add(Object key, Object value)
+        public void Add(object key, object value)
         {
             if (key == null)
             {
@@ -205,7 +189,7 @@ namespace System.Collections
             version++;
         }
 
-        public bool Contains(Object key)
+        public bool Contains(object key)
         {
             if (key == null)
             {
@@ -252,7 +236,7 @@ namespace System.Collections
             return new NodeEnumerator(this);
         }
 
-        public void Remove(Object key)
+        public void Remove(object key)
         {
             if (key == null)
             {
@@ -300,7 +284,7 @@ namespace System.Collections
                 current = null;
             }
 
-            public Object Current
+            public object Current
             {
                 get
                 {
@@ -320,7 +304,7 @@ namespace System.Collections
                 }
             }
 
-            public Object Key
+            public object Key
             {
                 get
                 {
@@ -332,7 +316,7 @@ namespace System.Collections
                 }
             }
 
-            public Object Value
+            public object Value
             {
                 get
                 {
@@ -426,7 +410,7 @@ namespace System.Collections
                 }
             }
 
-            Object ICollection.SyncRoot
+            object ICollection.SyncRoot
             {
                 get
                 {
@@ -457,7 +441,7 @@ namespace System.Collections
                     current = null;
                 }
 
-                public Object Current
+                public object Current
                 {
                     get
                     {
@@ -505,8 +489,8 @@ namespace System.Collections
         [Serializable]
         private class DictionaryNode
         {
-            public Object key;
-            public Object value;
+            public object key;
+            public object value;
             public DictionaryNode next;
         }
     }

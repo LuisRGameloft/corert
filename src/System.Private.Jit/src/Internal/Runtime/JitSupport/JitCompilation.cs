@@ -15,13 +15,14 @@ namespace ILCompiler
     /// <summary>
     /// Version of Compilation class used for JIT compilation. Should probably be merged with the Compilation class used in AOT compilation
     /// </summary>
-    internal class Compilation
+    public class Compilation
     {
         public Compilation(TypeSystemContext context)
         {
             _typeSystemContext = context;
             _typeGetTypeMethodThunks = new TypeGetTypeMethodThunkCache(context.GetWellKnownType(WellKnownType.Object));
-            _methodILCache = new ILProvider(new PInvokeILProvider(new PInvokeILEmitterConfiguration(forceLazyResolution: true), null));
+            _pInvokeILProvider = new PInvokeILProvider(new PInvokeILEmitterConfiguration(forceLazyResolution: true), null);
+            _ilProvider = new CoreRTILProvider();
             _nodeFactory = new NodeFactory(context);
             _devirtualizationManager = new DevirtualizationManager();
         }
@@ -30,15 +31,23 @@ namespace ILCompiler
         private readonly TypeSystemContext _typeSystemContext;
         protected readonly Logger _logger = Logger.Null;
         private readonly TypeGetTypeMethodThunkCache _typeGetTypeMethodThunks;
-        private ILProvider _methodILCache;
+        private ILProvider _ilProvider;
+        private PInvokeILProvider _pInvokeILProvider;
         private readonly DevirtualizationManager _devirtualizationManager;
 
         internal Logger Logger => _logger;
+        internal PInvokeILProvider PInvokeILProvider => _pInvokeILProvider;
 
         public TypeSystemContext TypeSystemContext { get { return _typeSystemContext; } }
         public NodeFactory NodeFactory { get { return _nodeFactory; } }
 
         public NameMangler NameMangler { get { return null; } }
+
+        public virtual bool CanInline(MethodDesc caller, MethodDesc callee)
+        {
+            // No inlining limits by default
+            return true;
+        }
 
         public ObjectNode GetFieldRvaData(FieldDesc field)
         {
@@ -49,11 +58,7 @@ namespace ILCompiler
 
         internal MethodIL GetMethodIL(MethodDesc method)
         {
-            // Flush the cache when it grows too big
-            if (_methodILCache.Count > 1000)
-                _methodILCache = new ILProvider(new PInvokeILProvider(new PInvokeILEmitterConfiguration(forceLazyResolution: true), null));
-
-            return _methodILCache.GetMethodIL(method);
+            return _ilProvider.GetMethodIL(method);
         }
 
         public bool HasLazyStaticConstructor(TypeDesc type) { return type.HasStaticConstructor; }
@@ -140,6 +145,13 @@ namespace ILCompiler
         public DelegateCreationInfo GetDelegateCtor(TypeDesc delegateType, MethodDesc target, bool followVirtualDispatch)
         {
             return DelegateCreationInfo.Create(delegateType, target, NodeFactory, followVirtualDispatch);
+        }
+
+        public TypeDesc GetTypeOfRuntimeType()
+        {
+            // The current plan seem to be to copy paste from ILCompiler.Compilation, but that's not a sustainable plan
+            throw new NotImplementedException();
+
         }
     }
 }

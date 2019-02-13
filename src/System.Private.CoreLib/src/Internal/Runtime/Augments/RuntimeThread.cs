@@ -80,6 +80,14 @@ namespace Internal.Runtime.Augments
             }
         }
 
+        internal static ulong CurrentOSThreadId
+        {
+            get
+            {
+                return RuntimeImports.RhCurrentOSThreadId();
+            }
+        }
+
         // Slow path executed once per thread
         private static RuntimeThread InitializeExistingThread(bool threadPoolThread)
         {
@@ -104,7 +112,7 @@ namespace Internal.Runtime.Augments
 
             if (threadPoolThread)
             {
-                RoInitialize();
+                InitializeCom();
             }
 
             return currentThread;
@@ -123,8 +131,6 @@ namespace Internal.Runtime.Augments
         {
             Debug.Assert(this == RuntimeThread.CurrentThread);
 
-            CultureInfo.ResetThreadCulture();
-
             if (_name != null)
             {
                 _name = null;
@@ -140,16 +146,6 @@ namespace Internal.Runtime.Augments
             {
                 _priority = newPriority;
             }
-        }
-
-        /// <summary>
-        /// Ensures the Windows Runtime is initialized on the current thread.
-        /// </summary>
-        internal static void RoInitialize()
-        {
-#if ENABLE_WINRT
-            Interop.WinRT.RoInitialize();
-#endif
         }
 
         /// <summary>
@@ -371,6 +367,7 @@ namespace Internal.Runtime.Augments
             return JoinInternal(millisecondsTimeout);
         }
 
+        [MethodImpl(MethodImplOptions.NoInlining)] // Slow path method. Make sure that the caller frame does not pay for PInvoke overhead.
         public static void Sleep(int millisecondsTimeout) => SleepInternal(VerifyTimeoutMilliseconds(millisecondsTimeout));
 
         /// <summary>
@@ -382,6 +379,8 @@ namespace Internal.Runtime.Augments
         internal static readonly int OptimalMaxSpinWaitsPerSpinIteration = 64;
 
         public static void SpinWait(int iterations) => RuntimeImports.RhSpinWait(iterations);
+
+        [MethodImpl(MethodImplOptions.NoInlining)] // Slow path method. Make sure that the caller frame does not pay for PInvoke overhead.
         public static bool Yield() => RuntimeImports.RhYield();
 
         public void Start() => StartInternal(null);
@@ -456,7 +455,7 @@ namespace Internal.Runtime.Augments
             {
                 t_currentThread = thread;
                 System.Threading.ManagedThreadId.SetForCurrentThread(thread._managedThreadId);
-                RoInitialize();
+                thread.InitializeComOnNewThread();
             }
             catch (OutOfMemoryException)
             {
@@ -513,8 +512,8 @@ namespace Internal.Runtime.Augments
 
             Debug.Assert(ProcessorIdRefreshRate <= ProcessorIdCacheCountDownMask);
 
-            // Mask with Int32.MaxValue to ensure the execution Id is not negative
-            t_currentProcessorIdCache = ((currentProcessorId << ProcessorIdCacheShift) & Int32.MaxValue) + ProcessorIdRefreshRate;
+            // Mask with int.MaxValue to ensure the execution Id is not negative
+            t_currentProcessorIdCache = ((currentProcessorId << ProcessorIdCacheShift) & int.MaxValue) + ProcessorIdRefreshRate;
 
             return currentProcessorId;
         }

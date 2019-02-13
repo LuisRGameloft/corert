@@ -20,19 +20,89 @@ namespace ILVerification.Tests
 {
     /// <summary>
     /// Parses the methods in the test assemblies. 
-    /// It loads all assemblies from the test folder defined in <code>TestDataLoader.TESTASSEMBLYPATH</code>
+    /// It loads all assemblies from the test folder defined in <code>TestDataLoader.TestAssemblyPath</code>
     /// This class feeds the xunit Theories
     /// </summary>
     class TestDataLoader
     {
         /// <summary>
-        /// The folder with the binaries which are compiled from the test driver IL Code
-        /// Currently the test .il code is built manually, but the plan is to have a ProjectReference and automatically build the .il files.
-        /// See: https://github.com/dotnet/corert/pull/3725#discussion_r118820770
+        /// The folder with the test binaries
         /// </summary>
-        public static string TESTASSEMBLYPATH = @"..\..\..\ILTests\";
+        private const string TestAssemblyPath = @"Tests\";
 
-        private const string SPECIALTEST_PREFIX = "special.";
+        private const string SpecialTestPrefix = "special.";
+
+        /// <summary>
+        ///  Returns all class correctly implement based on following naming convention
+        ///  [FriendlyName]_ValidType_Valid
+        /// </summary>
+        /// <returns></returns>
+        public static TheoryData<TestCase> GetTypesWithValidType()
+        {
+            var typeSelector = new Func<string[], TypeDefinitionHandle, TestCase>((mparams, typeDefinitionHandle) =>
+            {
+                if (mparams[1] == "ValidType")
+                {
+                    return new ValidTypeTestCase { MetadataToken = MetadataTokens.GetToken(typeDefinitionHandle) };
+                }
+                return null;
+            });
+            return GetTestTypeFromDll(typeSelector);
+        }
+
+        /// <summary>
+        ///  Returns all class doesn't correctly implement based on following naming convention
+        ///  [FriendlyName]_InvalidType_[ExpectedVerifierError1]@[ExpectedVerifierError2]....[ExpectedVerifierErrorN]
+        /// </summary>
+        /// <returns></returns>
+        public static TheoryData<TestCase> GetTypesWithInvalidType()
+        {
+            var typeSelector = new Func<string[], TypeDefinitionHandle, TestCase>((mparams, typeDefinitionHandle) =>
+            {
+                if (mparams[1] == "InvalidType")
+                {
+                    var verificationErros = new List<VerifierError>();
+                    foreach (var expectedError in mparams[2].Split('@'))
+                    {
+                        verificationErros.Add((VerifierError)Enum.Parse(typeof(VerifierError), expectedError));
+                    }
+                    var newItem = new InvalidTypeTestCase { MetadataToken = MetadataTokens.GetToken(typeDefinitionHandle) };
+                    newItem.ExpectedVerifierErrors = verificationErros;
+                    return newItem;
+                }
+                return null;
+            });
+            return GetTestTypeFromDll(typeSelector);
+        }
+
+        private static TheoryData<TestCase> GetTestTypeFromDll(Func<string[], TypeDefinitionHandle, TestCase> typeSelector)
+        {
+            var retVal = new TheoryData<TestCase>();
+
+            foreach (var testDllName in GetAllTestDlls())
+            {
+                EcmaModule testModule = GetModuleForTestAssembly(testDllName);
+                MetadataReader metadataReader = testModule.PEReader.GetMetadataReader();
+                foreach (TypeDefinitionHandle typeHandle in metadataReader.TypeDefinitions)
+                {
+                    var typeDef = metadataReader.GetTypeDefinition(typeHandle);
+                    var typeName = metadataReader.GetString(typeDef.Name);
+                    if (!string.IsNullOrEmpty(typeName) && typeName.Contains("_"))
+                    {
+                        var mparams = typeName.Split('_');
+                        TestCase newItem = typeSelector(mparams, typeHandle);
+                        if (newItem != null)
+                        {
+                            newItem.TestName = mparams[0];
+                            newItem.TypeName = typeName;
+                            newItem.ModuleName = testDllName;
+                            retVal.Add(newItem);
+                        }
+                    }
+                }
+            }
+            return retVal;
+        }
 
         /// <summary>
         /// Returns all methods that contain valid IL code based on the following naming convention:
@@ -129,11 +199,11 @@ namespace ILVerification.Tests
 
         private static MethodDefinitionHandle HandleSpecialTests(string[] methodParams, EcmaMethod method)
         {
-            if (!methodParams[0].StartsWith(SPECIALTEST_PREFIX))
+            if (!methodParams[0].StartsWith(SpecialTestPrefix))
                 return method.Handle;
 
             // Cut off special prefix
-            var specialParams = methodParams[0].Substring(SPECIALTEST_PREFIX.Length);
+            var specialParams = methodParams[0].Substring(SpecialTestPrefix.Length);
 
             // Get friendly name / special name
             int delimiter = specialParams.IndexOf('.');
@@ -152,7 +222,7 @@ namespace ILVerification.Tests
 
         private static IEnumerable<string> GetAllTestDlls()
         {
-            foreach (var item in Directory.GetFiles(TESTASSEMBLYPATH))
+            foreach (var item in Directory.GetFiles(TestAssemblyPath))
             {
                 if (item.ToLower().EndsWith(".dll"))
                 {
@@ -167,7 +237,7 @@ namespace ILVerification.Tests
 
             foreach (var fileName in GetAllTestDlls())
             {
-                simpleNameToPathMap.Add(Path.GetFileNameWithoutExtension(fileName), TESTASSEMBLYPATH + fileName);
+                simpleNameToPathMap.Add(Path.GetFileNameWithoutExtension(fileName), TestAssemblyPath + fileName);
             }
 
             Assembly coreAssembly = typeof(object).GetTypeInfo().Assembly;
@@ -178,9 +248,9 @@ namespace ILVerification.Tests
 
             var resolver = new TestResolver(simpleNameToPathMap);
             var typeSystemContext = new ILVerifyTypeSystemContext(resolver);
-            typeSystemContext.SetSystemModule(typeSystemContext.GetModule(resolver.Resolve(coreAssembly.GetName())));
+            typeSystemContext.SetSystemModule(typeSystemContext.GetModule(resolver.Resolve(coreAssembly.GetName().Name)));
 
-            return typeSystemContext.GetModule(resolver.Resolve(new AssemblyName(Path.GetFileNameWithoutExtension(assemblyName))));
+            return typeSystemContext.GetModule(resolver.Resolve(new AssemblyName(Path.GetFileNameWithoutExtension(assemblyName)).Name));
         }
 
         private sealed class TestResolver : ResolverBase
@@ -191,9 +261,9 @@ namespace ILVerification.Tests
                 _simpleNameToPathMap = simpleNameToPathMap;
             }
 
-            protected override PEReader ResolveCore(AssemblyName name)
+            protected override PEReader ResolveCore(string simpleName)
             {
-                if (_simpleNameToPathMap.TryGetValue(name.Name, out string path))
+                if (_simpleNameToPathMap.TryGetValue(simpleName, out string path))
                 {
                     return new PEReader(File.OpenRead(path));
                 }
@@ -206,6 +276,7 @@ namespace ILVerification.Tests
     abstract class TestCase : IXunitSerializable
     {
         public string TestName { get; set; }
+        public string TypeName { get; set; }
         public string MethodName { get; set; }
         public int MetadataToken { get; set; }
         public string ModuleName { get; set; }
@@ -213,6 +284,7 @@ namespace ILVerification.Tests
         public virtual void Deserialize(IXunitSerializationInfo info)
         {
             TestName = info.GetValue<string>(nameof(TestName));
+            TypeName = info.GetValue<string>(nameof(TypeName));
             MethodName = info.GetValue<string>(nameof(MethodName));
             MetadataToken = info.GetValue<int>(nameof(MetadataToken));
             ModuleName = info.GetValue<string>(nameof(ModuleName));
@@ -221,6 +293,7 @@ namespace ILVerification.Tests
         public virtual void Serialize(IXunitSerializationInfo info)
         {
             info.AddValue(nameof(TestName), TestName);
+            info.AddValue(nameof(TypeName), TypeName);
             info.AddValue(nameof(MethodName), MethodName);
             info.AddValue(nameof(MetadataToken), MetadataToken);
             info.AddValue(nameof(ModuleName), ModuleName);
@@ -241,6 +314,48 @@ namespace ILVerification.Tests
     /// Describes a test case with a method that contains invalid IL with the expected VerifierErrors
     /// </summary>
     class InvalidILTestCase : TestCase
+    {
+        public List<VerifierError> ExpectedVerifierErrors { get; set; }
+
+        public override void Serialize(IXunitSerializationInfo info)
+        {
+            base.Serialize(info);
+            var serializedExpectedErrors = JsonConvert.SerializeObject(ExpectedVerifierErrors);
+            info.AddValue(nameof(ExpectedVerifierErrors), serializedExpectedErrors);
+        }
+
+        public override void Deserialize(IXunitSerializationInfo info)
+        {
+            base.Deserialize(info);
+            var serializedExpectedErrors = info.GetValue<string>(nameof(ExpectedVerifierErrors));
+            ExpectedVerifierErrors = JsonConvert.DeserializeObject<List<VerifierError>>(serializedExpectedErrors);
+        }
+
+        public override string ToString()
+        {
+            return base.ToString() + GetErrorsString(ExpectedVerifierErrors);
+        }
+
+        private static string GetErrorsString(List<VerifierError> errors)
+        {
+            if (errors == null || errors.Count <= 0)
+                return String.Empty;
+
+            var errorsString = new StringBuilder(" (");
+
+            for (int i = 0; i < errors.Count - 1; ++i)
+                errorsString.Append(errors[i]).Append(", ");
+
+            errorsString.Append(errors[errors.Count - 1]);
+            errorsString.Append(")");
+
+            return errorsString.ToString();
+        }
+    }
+
+    class ValidTypeTestCase : TestCase { }
+
+    class InvalidTypeTestCase : TestCase
     {
         public List<VerifierError> ExpectedVerifierErrors { get; set; }
 
