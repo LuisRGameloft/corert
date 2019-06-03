@@ -3,12 +3,18 @@ This repo contains the .NET Core runtime optimized for ahead of time compilation
 
 ## Try Our Samples
 
-If you would like to give CoreRT a try, we publish daily snapshots of CoreRT to MyGet. Using CoreRT is as simple as adding a new package reference to your .NET Core project and publishing it. Check out one of our samples: a "[Hello World](samples/HelloWorld)" console app, a simple [ASP.NET Core](samples/WebApi/) app, a [MonoGame](samples/MonoGame/) game or a [native library](samples/NativeLibrary). The `README.md` file in each sample's directory will guide you through the process step by step.
+If you would like to give CoreRT a try, we publish daily snapshots of CoreRT to a NuGet feed. Using CoreRT is as simple as adding a new package reference to your .NET Core project and publishing it. Check out one of our samples: a "[Hello World](samples/HelloWorld)" console app, a simple [ASP.NET Core](samples/WebApi/) app, a [MonoGame](samples/MonoGame/) game or a [native library](samples/NativeLibrary). The `README.md` file in each sample's directory will guide you through the process step by step.
 
 ## Platform Support
 
 This is a work in progress. The current state of platform support:
-- Windows, MacOS and Linux x64 w/ RyuJIT codegen: Simple apps. Check our [ASP.NET Core](samples/WebApi/) and [MonoGame](samples/MonoGame/) samples.
+- Windows, MacOS and Linux x64 w/ RyuJIT codegen is able to compile many complex apps.
+   - [ASP.NET Core](samples/WebApi/) sample
+   - [MonoGame](samples/MonoGame/) sample
+   - [Avalonia](https://www.youtube.com/watch?v=iaC67CUmEXs) demo
+   - [ADO.NET](https://github.com/ifew/corert-db) sample
+   - [EntityFrameworkCore.Sqlite](https://github.com/rubin55/dot-hello) sample 
+   - Unsupported features: [Dynamic loading](https://github.com/dotnet/corert/issues/6949) (e.g. `Assembly.LoadFile`), [dynamic code generation](https://github.com/dotnet/corert/issues/5011) (e.g. `System.Reflection.Emit`), [Windows-specific interop](https://github.com/dotnet/corert/issues/4219) (e.g. COM, WinRT)
 - Linux ARM w/ RyuJIT codegen: ElmSharp Hello Tizen application ([detailed status](https://github.com/dotnet/corert/issues/4856))
 - CppCodeGen (targets all platforms that support C++): Simple C# programs. The big missing features are [garbage collection](https://github.com/dotnet/corert/issues/2033) and [exception handling](https://github.com/dotnet/corert/issues/910).
 - WebAssembly: Early prototype that compiles and runs very trivial programs only. Many features are [not yet implemented](https://github.com/dotnet/corert/issues?q=is%3Aissue+is%3Aopen+label%3Aarch-wasm).
@@ -42,11 +48,4 @@ This project has adopted the code of conduct defined by the [Contributor Covenan
 ## Related Projects
 There are many .NET related projects on GitHub.
 - The [.NET home repo](https://github.com/Microsoft/dotnet) links to 100s of .NET projects, from Microsoft and the community.
-- The [ASP.NET home repo](https://github.com/aspnet/home) is the best place to start learning about [ASP.NET Core](http://www.asp.net).
-
-## Build Status
-
-|         |Ubuntu 14.04 |Windows |Mac OS X |
-|---------|:------:|:------:|:------:|
-|**Debug**|[![Build status](https://ci.dot.net/job/dotnet_corert/job/master/job/debug_ubuntu/badge/icon)](https://ci.dot.net/job/dotnet_corert/job/master/job/debug_ubuntu/)|[![Build status](https://ci.dot.net/job/dotnet_corert/job/master/job/debug_windows_nt/badge/icon)](https://ci.dot.net/job/dotnet_corert/job/master/job/debug_windows_nt/)|[![Build Status](https://ci.dot.net/job/dotnet_corert/job/master/job/debug_osx10.12/badge/icon)](https://ci.dot.net/job/dotnet_corert/job/master/job/debug_osx10.12/)|
-|**Release**|[![Build status](https://ci.dot.net/job/dotnet_corert/job/master/job/release_ubuntu/badge/icon)](https://ci.dot.net/job/dotnet_corert/job/master/job/release_ubuntu/)|[![Build status](https://ci.dot.net/job/dotnet_corert/job/master/job/release_windows_nt/badge/icon)](https://ci.dot.net/job/dotnet_corert/job/master/job/release_windows_nt/)|[![Build Status](https://ci.dot.net/job/dotnet_corert/job/master/job/release_osx10.12/badge/icon)](https://ci.dot.net/job/dotnet_corert/job/master/job/release_osx10.12/)|
+- The [ASP.NET Core repo](https://github.com/aspnet/AspNetCore) is the best place to start learning about [ASP.NET Core](http://www.asp.net).

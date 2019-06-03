@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
+using System.Runtime.InteropServices;
 
 using ILCompiler.DependencyAnalysis;
 using ILCompiler.DependencyAnalysisFramework;
@@ -44,6 +45,7 @@ namespace ILCompiler
             ILProvider ilProvider,
             DebugInformationProvider debugInformationProvider,
             DevirtualizationManager devirtualizationManager,
+            PInvokeILEmitterConfiguration pInvokeConfiguration,
             Logger logger)
         {
             _dependencyGraph = dependencyGraph;
@@ -66,13 +68,7 @@ namespace ILCompiler
 
             if (!(nodeFactory.InteropStubManager is EmptyInteropStubManager))
             {
-                bool? forceLazyPInvokeResolution = null;
-                // TODO: Workaround lazy PInvoke resolution not working with CppCodeGen yet
-                // https://github.com/dotnet/corert/issues/2454
-                // https://github.com/dotnet/corert/issues/2149
-                if (nodeFactory.IsCppCodegenTemporaryWorkaround) forceLazyPInvokeResolution = false;
-                PInvokeILProvider = new PInvokeILProvider(new PInvokeILEmitterConfiguration(forceLazyPInvokeResolution), nodeFactory.InteropStubManager.InteropStateManager);
-
+                PInvokeILProvider = new PInvokeILProvider(pInvokeConfiguration, nodeFactory.InteropStubManager.InteropStateManager);
                 ilProvider = new CombinedILProvider(ilProvider, PInvokeILProvider);
             }
 
@@ -94,10 +90,9 @@ namespace ILCompiler
 
         protected abstract void CompileInternal(string outputFile, ObjectDumper dumper);
 
-        public virtual bool CanInline(MethodDesc caller, MethodDesc callee)
+        public bool CanInline(MethodDesc caller, MethodDesc callee)
         {
-            // No restrictions on inlining by default
-            return true;
+            return NodeFactory.CompilationModuleGroup.CanInline(caller, callee);
         }
 
         public DelegateCreationInfo GetDelegateCtor(TypeDesc delegateType, MethodDesc target, bool followVirtualDispatch)
@@ -120,7 +115,27 @@ namespace ILCompiler
             {
                 var pInvokeFixup = (PInvokeLazyFixupField)field;
                 PInvokeMetadata metadata = pInvokeFixup.PInvokeMetadata;
-                return NodeFactory.PInvokeMethodFixup(metadata.Module, metadata.Name, metadata.Flags);
+                ModuleDesc callingModule = ((MetadataType)pInvokeFixup.TargetMethod.OwningType).Module;
+                DllImportSearchPath? dllImportSearchPath = default;
+                if (callingModule.Assembly is EcmaAssembly asm)
+                {
+                    // We look for [assembly:DefaultDllImportSearchPaths(...)]
+                    var attrHandle = asm.MetadataReader.GetCustomAttributeHandle(asm.AssemblyDefinition.GetCustomAttributes(),
+                        "System.Runtime.InteropServices", "DefaultDllImportSearchPathsAttribute");
+                    if (!attrHandle.IsNil)
+                    {
+                        var attr = asm.MetadataReader.GetCustomAttribute(attrHandle);
+                        var decoded = attr.DecodeValue(new CustomAttributeTypeProvider(asm));
+                        if (decoded.FixedArguments.Length == 1 &&
+                            decoded.FixedArguments[0].Value is int searchPath)
+                        {
+                            dllImportSearchPath = (DllImportSearchPath)searchPath;
+                        }
+                    }
+                }
+
+                PInvokeModuleData moduleData = new PInvokeModuleData(metadata.Module, dllImportSearchPath, callingModule);
+                return NodeFactory.PInvokeMethodFixup(moduleData, metadata.Name, metadata.Flags);
             }
             else
             {
@@ -497,7 +512,9 @@ namespace ILCompiler
 
             public void RootReadOnlyDataBlob(byte[] data, int alignment, string reason, string exportName)
             {
-                _graph.AddRoot(_factory.ReadOnlyDataBlob(exportName, data, alignment), reason);
+                var blob = _factory.ReadOnlyDataBlob("__readonlydata_" + exportName, data, alignment);
+                _graph.AddRoot(blob, reason);
+                _factory.NodeAliases.Add(blob, exportName);
             }
         }
 

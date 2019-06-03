@@ -26,11 +26,11 @@ The above command will drop a static library (Windows `.lib`, OSX/Linux `.a`) in
 > dotnet publish /p:NativeLib=Shared -r <RID> -c <Configuration>
 ```
 
-The above command will drop a shared library (Windows `.dll`, OSX `.dylib`, Linux `.so`) in `./bin/[configuration]/netstandard2.0/[RID]/publish/` folder and will have the same name as the folder in which your source file is present. Building shared libraries on Linux is currently non-functional, see [#4988](https://github.com/dotnet/corert/issues/4988).
+The above command will drop a shared library (Windows `.dll`, OSX `.dylib`, Linux `.so`) in `./bin/[configuration]/netstandard2.0/[RID]/publish/` folder and will have the same name as the folder in which your source file is present.
 
 ## Exporting methods
 
-For a C# method in the native library to be consumable by external programs, it has to be explicitly exported using the `[NativeCallable]` attribute. First define the `System.Runtime.InteropServices.NativeCallableAttribute` in your project, see [here](https://github.com/dotnet/corert/blob/master/tests/src/Simple/SharedLibrary/NativeCallable.cs). The local definition of the `NativeCallableAttribute` is a temporary workaround that will go away once the attribute is added to the official .NET Core public surface.
+For a C# method in the native library to be consumable by external programs, it has to be explicitly exported using the `[NativeCallable]` attribute. First define the `System.Runtime.InteropServices.NativeCallableAttribute` in your project, see [here](NativeCallable.cs). The local definition of the `NativeCallableAttribute` is a temporary workaround that will go away once the attribute is added to the official .NET Core public surface.
 
 Next, apply the attribute to the method, specifying the `EntryPoint` and `CallingConvention` properties:
 
@@ -48,6 +48,8 @@ After the native library library is built, the above C# `Add` method will be exp
 * Exported methods can only naturally accept or return primitives or value types (i.e structs), they have to marshal all reference type arguments.
 * Exported methods cannot be called from regular managed C# code, an exception will be thrown.
 * Exported methods cannot use regular C# exception handling, they should return error codes instead.
+
+The sample [source code](Class1.cs) demonstrates common techniques used to stay within these limitations.
 
 ## References
 

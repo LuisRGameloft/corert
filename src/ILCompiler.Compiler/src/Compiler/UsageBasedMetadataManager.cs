@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Generic;
 
+using Internal.IL;
 using Internal.TypeSystem;
 
 using ILCompiler.Metadata;
@@ -27,10 +28,14 @@ namespace ILCompiler
         internal readonly UsageBasedMetadataGenerationOptions _generationOptions;
         private readonly bool _hasPreciseFieldUsageInformation;
 
+        private readonly ILProvider _ilProvider;
+
         private readonly List<ModuleDesc> _modulesWithMetadata = new List<ModuleDesc>();
         private readonly List<FieldDesc> _fieldsWithMetadata = new List<FieldDesc>();
         private readonly List<MethodDesc> _methodsWithMetadata = new List<MethodDesc>();
         private readonly List<MetadataType> _typesWithMetadata = new List<MetadataType>();
+
+        private readonly MetadataType _serializationInfoType;
 
         public UsageBasedMetadataManager(
             CompilationModuleGroup group,
@@ -40,6 +45,7 @@ namespace ILCompiler
             string logFile,
             StackTraceEmissionPolicy stackTracePolicy,
             DynamicInvokeThunkGenerationPolicy invokeThunkGenerationPolicy,
+            ILProvider ilProvider,
             UsageBasedMetadataGenerationOptions generationOptions)
             : base(typeSystemContext, blockingPolicy, resourceBlockingPolicy, logFile, stackTracePolicy, invokeThunkGenerationPolicy)
         {
@@ -47,6 +53,9 @@ namespace ILCompiler
             _hasPreciseFieldUsageInformation = false;
             _compilationModuleGroup = group;
             _generationOptions = generationOptions;
+            _ilProvider = ilProvider;
+
+            _serializationInfoType = typeSystemContext.SystemModule.GetType("System.Runtime.Serialization", "SerializationInfo", false);
         }
 
         protected override void Graph_NewMarkedNode(DependencyNodeCore<NodeFactory> obj)
@@ -181,6 +190,58 @@ namespace ILCompiler
                     }
                 }
             }
+
+            // If a type is marked [Serializable], make sure a couple things are also included.
+            if (type.IsSerializable && !type.IsGenericDefinition)
+            {
+                foreach (MethodDesc method in type.GetAllMethods())
+                {
+                    MethodSignature signature = method.Signature;
+
+                    if (method.IsConstructor
+                        && signature.Length == 2
+                        && signature[0] == _serializationInfoType
+                        /* && signature[1] is StreamingContext */)
+                    {
+                        dependencies = dependencies ?? new DependencyList();
+                        dependencies.Add(factory.CanonicalEntrypoint(method), "Binary serialization");
+                    }
+
+                    // Methods with these attributes can be called during serialization
+                    if (signature.Length == 1 && !signature.IsStatic && signature.ReturnType.IsVoid &&
+                        (method.HasCustomAttribute("System.Runtime.Serialization", "OnSerializingAttribute")
+                        || method.HasCustomAttribute("System.Runtime.Serialization", "OnSerializedAttribute")
+                        || method.HasCustomAttribute("System.Runtime.Serialization", "OnDeserializingAttribute")
+                        || method.HasCustomAttribute("System.Runtime.Serialization", "OnDeserializedAttribute")))
+                    {
+                        dependencies = dependencies ?? new DependencyList();
+                        dependencies.Add(factory.CanonicalEntrypoint(method), "Binary serialization");
+                    }
+                }
+            }
+
+            // Event sources need their special nested types
+            if (type is MetadataType mdType && mdType.HasCustomAttribute("System.Diagnostics.Tracing", "EventSourceAttribute"))
+            {
+                AddEventSourceSpecialTypeDependencies(ref dependencies, factory, mdType.GetNestedType("Keywords"));
+                AddEventSourceSpecialTypeDependencies(ref dependencies, factory, mdType.GetNestedType("Tasks"));
+                AddEventSourceSpecialTypeDependencies(ref dependencies, factory, mdType.GetNestedType("Opcodes"));
+
+                void AddEventSourceSpecialTypeDependencies(ref DependencyList dependencies, NodeFactory factory, MetadataType type)
+                {
+                    if (type != null)
+                    {
+                        const string reason = "Event source";
+                        dependencies = dependencies ?? new DependencyList();
+                        dependencies.Add(factory.TypeMetadata(type), reason);
+                        foreach (FieldDesc field in type.GetFields())
+                        {
+                            if (field.IsLiteral)
+                                dependencies.Add(factory.FieldMetadata(field), reason);
+                        }
+                    }
+                }
+            }
         }
 
         protected override void GetRuntimeMappingDependenciesDueToReflectability(ref DependencyList dependencies, NodeFactory factory, TypeDesc type)
@@ -235,6 +296,26 @@ namespace ILCompiler
             {
                 dependencies = dependencies ?? new DependencyList();
                 dependencies.Add(factory.MethodMetadata(method.GetTypicalMethodDefinition()), "LDTOKEN method");
+            }
+        }
+
+        protected override void GetDependenciesDueToMethodCodePresence(ref DependencyList dependencies, NodeFactory factory, MethodDesc method)
+        {
+            if ((_generationOptions & UsageBasedMetadataGenerationOptions.ILScanning) != 0)
+            {
+                MethodIL methodIL = _ilProvider.GetMethodIL(method);
+
+                if (methodIL != null)
+                {
+                    try
+                    {
+                        ReflectionMethodBodyScanner.Scan(ref dependencies, factory, methodIL);
+                    }
+                    catch (TypeSystemException)
+                    {
+                        // A problem with the IL - we just don't scan it...
+                    }
+                }
             }
         }
 
@@ -317,8 +398,7 @@ namespace ILCompiler
 
             foreach (var method in GetCompiledMethods())
             {
-                if (!method.IsCanonicalMethod(CanonicalFormKind.Specific) &&
-                    !IsReflectionBlocked(method))
+                if (!IsReflectionBlocked(method))
                 {
                     if ((reflectableTypes[method.OwningType] & MetadataCategory.RuntimeMapping) != 0)
                         reflectableMethods[method] |= MetadataCategory.RuntimeMapping;
@@ -488,5 +568,10 @@ namespace ILCompiler
         /// statically used.
         /// </remarks>
         AnonymousTypeHeuristic = 2,
+
+        /// <summary>
+        /// Scan IL for common reflection patterns to find additional compilation roots.
+        /// </summary>
+        ILScanning = 4,
     }
 }

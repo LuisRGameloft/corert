@@ -17,6 +17,7 @@ using System.Runtime.CompilerServices;
 using ILCompiler.DependencyAnalysis;
 
 using Internal.Text;
+using Internal.TypeSystem;
 
 namespace ILCompiler.PEWriter
 {
@@ -201,6 +202,11 @@ namespace ILCompiler.PEWriter
     public class SectionBuilder
     {
         /// <summary>
+        /// Target OS / architecture.
+        /// </summary>
+        TargetDetails _target;
+
+        /// <summary>
         /// Map from symbols to their target sections and offsets.
         /// </summary>
         Dictionary<ISymbolNode, SymbolTarget> _symbolMap;
@@ -246,6 +252,12 @@ namespace ILCompiler.PEWriter
         int _readyToRunHeaderSize;
 
         /// <summary>
+        /// Padding 4-byte sequence to use in code section. Typically corresponds
+        /// to some interrupt to be thrown at "invalid" IP addresses.
+        /// </summary>
+        uint _codePadding;
+
+        /// <summary>
         /// For PE files with exports, this is the "DLL name" string to store in the export directory table.
         /// </summary>
         string _dllNameForExportDirectoryTable;
@@ -253,8 +265,9 @@ namespace ILCompiler.PEWriter
         /// <summary>
         /// Construct an empty section builder without any sections or blocks.
         /// </summary>
-        public SectionBuilder()
+        public SectionBuilder(TargetDetails target)
         {
+            _target = target;
             _symbolMap = new Dictionary<ISymbolNode, SymbolTarget>();
             _sections = new List<Section>();
             _exportSymbols = new List<ExportSymbol>();
@@ -262,6 +275,27 @@ namespace ILCompiler.PEWriter
             _exportDirectoryEntry = default(DirectoryEntry);
             _relocationDirectoryEntry = default(DirectoryEntry);
             _sectionStartNodeLookup = null;
+
+            switch (_target.Architecture)
+            {
+                case TargetArchitecture.X86:
+                case TargetArchitecture.X64:
+                    // 4 times INT 3 (or debugger break)
+                    _codePadding = 0xCCCCCCCCu;
+                    break;
+
+                case TargetArchitecture.ARM:
+                    // 2 times undefined instruction used as debugger break
+                    _codePadding = (_target.IsWindows ? 0xDEFEDEFEu : 0xDE01DE01u);
+                    break;
+
+                case TargetArchitecture.ARM64:
+                    _codePadding = 0xD43E0000u;
+                    break;
+
+                default:
+                    throw new NotImplementedException();
+            }
         }
 
         /// <summary>
@@ -384,14 +418,28 @@ namespace ILCompiler.PEWriter
                 int padding = alignedOffset - section.Content.Count;
                 if (padding > 0)
                 {
-                    byte paddingByte = 0;
                     if ((section.Characteristics & SectionCharacteristics.ContainsCode) != 0)
                     {
-                        // TODO: only use INT3 on x86 & amd64
-                        paddingByte = 0xCC;
+                        uint cp = _codePadding;
+                        while (padding >= sizeof(uint))
+                        {
+                            section.Content.WriteUInt32(cp);
+                            padding -= sizeof(uint);
+                        }
+                        if (padding >= 2)
+                        {
+                            section.Content.WriteUInt16(unchecked((ushort)cp));
+                            cp >>= 16;
+                        }
+                        if ((padding & 1) != 0)
+                        {
+                            section.Content.WriteByte(unchecked((byte)cp));
+                        }
                     }
-
-                    section.Content.WriteBytes(paddingByte, padding);
+                    else
+                    {
+                        section.Content.WriteBytes(0, padding);
+                    }
                 }
             }
 
@@ -915,67 +963,6 @@ namespace ILCompiler.PEWriter
         {
             builder.WriteInt32(directoryEntry.RelativeVirtualAddress);
             builder.WriteInt32(directoryEntry.Size);
-        }
-    }
-    
-    /// <summary>
-    /// Section builder extensions for R2R PE builder.
-    /// </summary>
-    public static class SectionBuilderExtensions
-    {
-        /// <summary>
-        /// Emit built sections using the R2R PE writer.
-        /// </summary>
-        /// <param name="builder">Section builder to emit</param>
-        /// <param name="machine">Target machine architecture</param>
-        /// <param name="inputReader">Input MSIL reader</param>
-        /// <param name="outputStream">Output stream for the final R2R PE file</param>
-        public static void EmitR2R(
-            this SectionBuilder builder,
-            Machine machine,
-            PEReader inputReader,
-            Action<PEDirectoriesBuilder> directoriesUpdater,
-            Stream outputStream)
-        {
-            R2RPEBuilder r2rBuilder = new R2RPEBuilder(
-                machine: machine,
-                peReader: inputReader,
-                sectionNames: builder.GetSections(),
-                sectionSerializer: builder.SerializeSection,
-                directoriesUpdater: (PEDirectoriesBuilder directoriesBuilder) =>
-                {
-                    builder.UpdateDirectories(directoriesBuilder);
-                    if (directoriesUpdater != null)
-                    {
-                        directoriesUpdater(directoriesBuilder);
-                    }
-                });
-
-            BlobBuilder outputPeFile = new BlobBuilder();
-            r2rBuilder.Serialize(outputPeFile);
-
-            CorHeaderBuilder corHeader = r2rBuilder.CorHeader;
-            if (corHeader != null)
-            {
-                corHeader.Flags = (r2rBuilder.CorHeader.Flags & ~CorFlags.ILOnly) | CorFlags.ILLibrary;
-
-                corHeader.MetadataDirectory = r2rBuilder.RelocateDirectoryEntry(corHeader.MetadataDirectory);
-                corHeader.ResourcesDirectory = r2rBuilder.RelocateDirectoryEntry(corHeader.ResourcesDirectory);
-                corHeader.StrongNameSignatureDirectory = r2rBuilder.RelocateDirectoryEntry(corHeader.StrongNameSignatureDirectory);
-                corHeader.CodeManagerTableDirectory = r2rBuilder.RelocateDirectoryEntry(corHeader.CodeManagerTableDirectory);
-                corHeader.VtableFixupsDirectory = r2rBuilder.RelocateDirectoryEntry(corHeader.VtableFixupsDirectory);
-                corHeader.ExportAddressTableJumpsDirectory = r2rBuilder.RelocateDirectoryEntry(corHeader.ExportAddressTableJumpsDirectory);
-                corHeader.ManagedNativeHeaderDirectory = r2rBuilder.RelocateDirectoryEntry(corHeader.ManagedNativeHeaderDirectory);
-
-                builder.UpdateCorHeader(corHeader);
-            }
-
-            builder.RelocateOutputFile(
-                outputPeFile,
-                inputReader.PEHeaders.PEHeader.ImageBase,
-                corHeader,
-                r2rBuilder.CorHeaderFileOffset,
-                outputStream);
         }
     }
 }

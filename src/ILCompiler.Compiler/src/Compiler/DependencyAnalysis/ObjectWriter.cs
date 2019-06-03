@@ -67,6 +67,7 @@ namespace ILCompiler.DependencyAnalysis
 
         // Nodefactory for which ObjectWriter is instantiated for.
         private NodeFactory _nodeFactory;
+        private readonly bool _isSingleFileCompilation;
 
         // Unix section containing LSDA data, like EH Info and GC Info
         public static readonly ObjectNodeSection LsdaSection = new ObjectNodeSection(".corert_eh_table", SectionType.ReadOnly);
@@ -180,14 +181,14 @@ namespace ILCompiler.DependencyAnalysis
         }
 
         [DllImport(NativeObjectWriterFileName)]
-        private static extern void EmitSymbolDef(IntPtr objWriter, byte[] symbolName);
-        public void EmitSymbolDef(byte[] symbolName)
+        private static extern void EmitSymbolDef(IntPtr objWriter, byte[] symbolName, int global);
+        public void EmitSymbolDef(byte[] symbolName, bool global = false)
         {
-            EmitSymbolDef(_nativeObjectWriter, symbolName);
+            EmitSymbolDef(_nativeObjectWriter, symbolName, global ? 1 : 0);
         }
-        public void EmitSymbolDef(Utf8StringBuilder symbolName)
+        public void EmitSymbolDef(Utf8StringBuilder symbolName, bool global = false)
         {
-            EmitSymbolDef(_nativeObjectWriter, symbolName.Append('\0').UnderlyingArray);
+            EmitSymbolDef(_nativeObjectWriter, symbolName.Append('\0').UnderlyingArray, global ? 1 : 0);
         }
 
         [DllImport(NativeObjectWriterFileName)]
@@ -523,10 +524,12 @@ namespace ILCompiler.DependencyAnalysis
                 
                 _sb.Clear().Append(_nodeFactory.NameMangler.CompilationUnitPrefix).Append("_unwind").Append(i.ToStringInvariant());
 
-                ObjectNodeSection section = ObjectNodeSection.XDataSection;
-                SwitchSection(_nativeObjectWriter, section.Name);
-
                 byte[] blobSymbolName = _sb.Append(_currentNodeZeroTerminatedName).ToUtf8String().UnderlyingArray;
+
+                ObjectNodeSection section = ObjectNodeSection.XDataSection;
+                if (ShouldShareSymbol(node))
+                    section = GetSharedSection(section, _sb.ToString());
+                SwitchSection(_nativeObjectWriter, section.Name, GetCustomSectionAttributes(section), section.ComdatName);
 
                 EmitAlignment(4);
                 EmitSymbolDef(blobSymbolName);
@@ -859,7 +862,12 @@ namespace ILCompiler.DependencyAnalysis
                     AppendExternCPrefix(_sb);
                     name.AppendMangledName(_nodeFactory.NameMangler, _sb);
 
-                    EmitSymbolDef(_sb);
+                    // Emit all symbols as global on Windows because they matter only for the PDB.
+                    // Emit all symbols as global in multifile builds so that object files can
+                    // link against each other.
+                    bool isGlobal = _nodeFactory.Target.IsWindows || !_isSingleFileCompilation;
+
+                    EmitSymbolDef(_sb, isGlobal);
 
                     string alternateName = _nodeFactory.GetSymbolAlternateName(name);
                     if (alternateName != null)
@@ -868,7 +876,7 @@ namespace ILCompiler.DependencyAnalysis
                         AppendExternCPrefix(_sb);
                         _sb.Append(alternateName);
 
-                        EmitSymbolDef(_sb);
+                        EmitSymbolDef(_sb, global: true);
                     }
                 }
             }
@@ -887,6 +895,7 @@ namespace ILCompiler.DependencyAnalysis
             }
             _nodeFactory = factory;
             _targetPlatform = _nodeFactory.Target;
+            _isSingleFileCompilation = _nodeFactory.CompilationModuleGroup.IsSingleFileCompilation;
             _userDefinedTypeDescriptor = new UserDefinedTypeDescriptor(this, factory);
         }
 
@@ -919,7 +928,14 @@ namespace ILCompiler.DependencyAnalysis
 
         private bool ShouldShareSymbol(ObjectNode node)
         {
-            if (_nodeFactory.CompilationModuleGroup.IsSingleFileCompilation)
+            // Foldable sections are always COMDATs
+            ObjectNodeSection section = node.Section;
+            if (section == ObjectNodeSection.FoldableManagedCodeUnixContentSection ||
+                section == ObjectNodeSection.FoldableManagedCodeWindowsContentSection ||
+                section == ObjectNodeSection.FoldableReadOnlyDataSection)
+                return true;
+
+            if (_isSingleFileCompilation)
                 return false;
 
             if (_targetPlatform.OperatingSystem == TargetOS.OSX)
@@ -965,20 +981,6 @@ namespace ILCompiler.DependencyAnalysis
                 if (factory.Target.OperatingSystem == TargetOS.Windows)
                 {
                     managedCodeSection = ObjectNodeSection.ManagedCodeWindowsContentSection;
-
-                    // Emit sentinels for managed code section.
-                    ObjectNodeSection codeStartSection = factory.CompilationModuleGroup.IsSingleFileCompilation ?
-                                                            ObjectNodeSection.ManagedCodeStartSection :
-                                                            objectWriter.GetSharedSection(ObjectNodeSection.ManagedCodeStartSection, "__managedcode_a");
-                    objectWriter.SetSection(codeStartSection);
-                    objectWriter.EmitSymbolDef(new Utf8StringBuilder().Append("__managedcode_a"));
-                    objectWriter.EmitIntValue(0, 1);
-                    ObjectNodeSection codeEndSection = factory.CompilationModuleGroup.IsSingleFileCompilation ?
-                                                            ObjectNodeSection.ManagedCodeEndSection :
-                                                            objectWriter.GetSharedSection(ObjectNodeSection.ManagedCodeEndSection, "__managedcode_z");
-                    objectWriter.SetSection(codeEndSection);
-                    objectWriter.EmitSymbolDef(new Utf8StringBuilder().Append("__managedcode_z"));
-                    objectWriter.EmitIntValue(1, 1);
                 }
                 else
                 {

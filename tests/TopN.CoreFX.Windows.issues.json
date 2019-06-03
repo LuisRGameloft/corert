@@ -6,6 +6,18 @@
             "classes": null,
             "methods": [
                 {
+                    "name": "System.Collections.Tests.Dictionary_Generic_Tests_SimpleInt_int_With_Comparer_WrapStructural_SimpleInt.EnsureCapacity_Generic_RequestingLargerCapacity_DoesNotInvalidateEnumeration",
+                    "reason": "outdated"
+                },
+                {
+                    "name": "System.Collections.Tests.Dictionary_Generic_Tests_string_string.EnsureCapacity_Generic_RequestingLargerCapacity_DoesNotInvalidateEnumeration",
+                    "reason": "outdated"
+                },
+                {
+                    "name": "System.Collections.Tests.Dictionary_Generic_Tests_int_int.EnsureCapacity_Generic_RequestingLargerCapacity_DoesNotInvalidateEnumeration",
+                    "reason": "outdated"
+                },
+                {
                     "name": "System.Collections.Tests.Dictionary_Generic_Tests_Keys_AsICollection.ICollection_NonGeneric_SyncRoot",
                     "reason": "outdated"
                 },
@@ -56,6 +68,26 @@
                 {
                     "name": "System.Collections.Tests.SortedList_IDictionary_NonGeneric_Tests.ICollection_NonGeneric_SyncRoot",
                     "reason": "waiting on corefx update"
+                },
+                {
+                    "name": "System.Collections.Generic.Tests.ComparerTests.MostComparisons",
+                    "reason": "$BlockedFromReflection_0_5b449e4c"
+                },
+                {
+                    "name": "System.Collections.Tests.BitArray_GetSetTests.CopyTo_Size_Invalid",
+                    "reason": "$BlockedFromReflection_0_5b449e4c"
+                },
+                {
+                    "name": "System.Collections.Generic.Tests.EqualityComparerTests.Equals",
+                    "reason": "$BlockedFromReflection_0_5b449e4c"
+                },
+                {
+                    "name": "System.Collections.Tests.BitArray_GetSetTests.CopyTo",
+                    "reason": "$BlockedFromReflection_0_5b449e4c"
+                },
+                {
+                    "name": "System.Collections.Generic.Tests.EqualityComparerTests.GetHashCode",
+                    "reason": "$BlockedFromReflection_0_5b449e4c"
                 },
                 {
                     "name": "System.Collections.Tests.SortedList_Generic_Tests_string_string.ICollection_Generic_Remove_DefaultValueContainedInCollection",
@@ -950,6 +982,30 @@
                 {
                     "name": "System.Tests.ConvertToSingleTests.FromString",
                     "reason": "https://github.com/dotnet/coreclr/pull/20707"
+                },
+                {
+                    "name": "System.Tests.EnvironmentTests.Version_MatchesFixedVersion",
+                    "reason": "outdated"
+                },
+                {
+                    "name": "System.Tests.AppDomainTests.ApplyPolicy",
+                    "reason": "outdated"
+                },
+                {
+                    "name": "System.Tests.AppDomainTests.MonitoringSurvivedProcessMemorySize",
+                    "reason": "outdated"
+                },
+                {
+                    "name": "System.Tests.AppDomainTests.MonitoringTotalProcessorTime",
+                    "reason": "outdated"
+                },
+                {
+                    "name": "System.Tests.AppDomainTests.MonitoringTotalAllocatedMemorySize",
+                    "reason": "outdated"
+                },
+                {
+                    "name": "System.Tests.AppDomainTests.MonitoringSurvivedMemorySize",
+                    "reason": "outdated"
                 }
             ]
         }
@@ -960,6 +1016,38 @@
             "namespaces": null,
             "classes": null,
             "methods": [
+                {
+                    "name": "System.Text.Tests.StringBuilderTests.AppendFormat",
+                    "reason": "Outdated"
+                },
+                {
+                    "name": "System.Tests.TimeSpanTests.FromMilliseconds",
+                    "reason": "The test will be enabled after https://github.com/dotnet/corefx/pull/37235"
+                },
+                {
+                    "name": "System.Tests.TimeSpanTests.FromMilliseconds_Invalid",
+                    "reason": "The test will be enabled after https://github.com/dotnet/corefx/pull/37235"
+                },
+                {
+                    "name": "System.Tests.TimeSpanTests.NamedMultiplication",
+                    "reason": "The test will be enabled after https://github.com/dotnet/corefx/pull/37235"
+                },
+                {
+                    "name": "System.Tests.TimeSpanTests.Multiplication",
+                    "reason": "The test will be enabled after https://github.com/dotnet/corefx/pull/37235"
+                },
+                {
+                    "name": "System.Tests.TimeSpanTests.Division",
+                    "reason": "The test will be enabled after https://github.com/dotnet/corefx/pull/37235"
+                },
+                {
+                    "name": "System.Tests.TimeSpanTests.NamedDivision",
+                    "reason": "The test will be enabled after https://github.com/dotnet/corefx/pull/37235"
+                },
+                {
+                    "name": "System.Tests.VersionTests.Comparisons_NullArgument_ThrowsArgumentNullException",
+                    "reason":  "Version was improved to no longer throw from comparison operators"
+                },
                 {
                     "name": "System.Tests.TimeSpanTests.Total_Days_Hours_Minutes_Seconds_Milliseconds",
                     "reason": "outdated"
@@ -1261,6 +1349,10 @@
                     "reason": "System.Reflection.MissingMetadataException"
                 },
                 {
+                    "name": "System.Reflection.Tests.MemberInfoNetCoreAppTests.HasSameMetadataDefinitionAs_GenericClassMembers",
+                    "reason": "System.Reflection.MissingMetadataException"
+                },
+                {
                     "name": "System.Collections.ObjectModel.Tests.ReadOnlyCollectionTests.CopyTo",
                     "reason": "Xunit.Sdk.EqualException"
                 },
@@ -1275,6 +1367,42 @@
                 {
                     "name": "System.Reflection.Tests.InvokeRefReturnNetcoreTests.TestRefReturnOfPointer",
                     "reason": "$BlockedFromReflection_6_1bc5f05b"
+                },
+                {
+                    "name": "System.Reflection.Tests.InvokeRefReturnNetcoreTests.TestRefReturnMethodInvoke",
+                    "reason": "$BlockedFromReflection_6_1bc5f05b"
+                },
+                {
+                    "name": "System.Reflection.Tests.InvokeRefReturnNetcoreTests.TestRefReturnPropertyGetValue",
+                    "reason": "$BlockedFromReflection_6_1bc5f05b"
+                },
+                {
+                    "name": "System.Reflection.Tests.InvokeRefReturnNetcoreTests.TestNullRefReturnInvoke",
+                    "reason": "$BlockedFromReflection_6_1bc5f05b"
+                },
+                {
+                    "name": "System.Reflection.Tests.MemberInfoNetCoreAppTests.HasSameMetadataDefinitionAs_Negative_NonRuntimeType",
+                    "reason": "$BlockedFromReflection_6_1bc5f05b"
+                },
+                {
+                    "name": "System.Tests.ArrayTests.Fill_Generic",
+                    "reason": "$BlockedFromReflection_6_1bc5f05b"
+                },
+                {
+                    "name": "System.Reflection.Tests.MemberInfoNetCoreAppTests.HasSameMetadataDefinitionAs_Negative_Null",
+                    "reason": "$BlockedFromReflection_6_1bc5f05b"
+                },
+                {
+                    "name": "System.Tests.ArrayTests.BinarySearch_TypesNotIComparable_ThrowsInvalidOperationException",
+                    "reason": "$BlockedFromReflection_6_1bc5f05b"
+                },
+                {
+                    "name": "System.Tests.ArraySegment_Tests_int.IGenericSharedAPI_SerializeDeserialize",
+                    "reason": "BinaryFormatter"
+                },
+                {
+                    "name": "System.Tests.ArraySegment_Tests_string.IGenericSharedAPI_SerializeDeserialize",
+                    "reason": "BinaryFormatter"
                 },
                 {
                     "name": "System.Reflection.Tests.InvokeRefReturnNetcoreTests.TestRefReturnNullable",

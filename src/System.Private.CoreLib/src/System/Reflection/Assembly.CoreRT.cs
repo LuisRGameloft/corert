@@ -4,6 +4,7 @@
 
 using System.Configuration.Assemblies;
 using System.Runtime.Serialization;
+using System.IO;
 
 using Internal.Reflection.Augments;
 using Internal.Reflection.Core.NonPortable;
@@ -20,7 +21,6 @@ namespace System.Reflection
         public static Assembly GetCallingAssembly() { throw new PlatformNotSupportedException(); }
 
         public static Assembly Load(AssemblyName assemblyRef) => ReflectionAugments.ReflectionCoreCallbacks.Load(assemblyRef, throwOnFileNotFound: true);
-        public static Assembly Load(byte[] rawAssembly, byte[] rawSymbolStore) => ReflectionAugments.ReflectionCoreCallbacks.Load(rawAssembly, rawSymbolStore);
 
         public static Assembly Load(string assemblyString)
         {
@@ -31,9 +31,24 @@ namespace System.Reflection
             return Load(name);
         }
 
-        public static Assembly LoadFile(string path) { throw new PlatformNotSupportedException(); }
-        public static Assembly LoadFrom(string assemblyFile) { throw new PlatformNotSupportedException(); }
-        public static Assembly LoadFrom(string assemblyFile, byte[] hashValue, AssemblyHashAlgorithm hashAlgorithm) { throw new PlatformNotSupportedException(); }
+        [Obsolete("This method has been deprecated. Please use Assembly.Load() instead. https://go.microsoft.com/fwlink/?linkid=14202")]
+        public static Assembly LoadWithPartialName(string partialName)
+        {
+            if (partialName == null)
+                throw new ArgumentNullException(nameof(partialName));
+
+            if ((partialName.Length == 0) || (partialName[0] == '\0'))
+                throw new ArgumentException(SR.Format_StringZeroLength, nameof(partialName));
+
+            try
+            {
+                return Load(partialName);
+            }
+            catch (FileNotFoundException)
+            {
+                return null;
+            }
+        }
 
         public bool IsRuntimeImplemented() => this is IRuntimeImplemented; // Not an api but needs to be public because of Reflection.Core/CoreLib divide.
     }

@@ -6,43 +6,25 @@
 #include <cstddef>
 #include <cassert>
 #include <memory>
-
-// The CoreCLR PAL defines _POSIX_C_SOURCE to avoid calling non-posix pthread functions.
-// This isn't something we want, because we're totally fine using non-posix functions.
-#if defined(__APPLE__)
- #define _DARWIN_C_SOURCE
-#endif // defined(__APPLE__)
-
 #include <pthread.h>
 #include <signal.h>
+
 #include "config.h"
-
-// clang typedefs uint64_t to be unsigned long long, which clashes with
-// PAL/MSVC's unsigned long, causing linker errors. This ugly hack
-// will go away once the GC doesn't depend on PAL headers.
-typedef unsigned long uint64_t_hack;
-#define uint64_t uint64_t_hack
-static_assert(sizeof(uint64_t) == 8, "unsigned long isn't 8 bytes");
-
-#ifndef __out_z
-#define __out_z
-#endif // __out_z
+#include "common.h"
 
 #include "gcenv.structs.h"
 #include "gcenv.base.h"
 #include "gcenv.os.h"
+#include "gcenv.unix.inl"
+#include "volatile.h"
 
-#ifndef FEATURE_STANDALONE_GC
- #error "A GC-private implementation of GCToOSInterface should only be used with FEATURE_STANDALONE_GC"
-#endif // FEATURE_STANDALONE_GC
-
-#ifdef HAVE_SYS_TIME_H
+#if HAVE_SYS_TIME_H
  #include <sys/time.h>
 #else
  #error "sys/time.h required by GC PAL for the time being"
 #endif // HAVE_SYS_TIME_
 
-#ifdef HAVE_SYS_MMAN_H
+#if HAVE_SYS_MMAN_H
  #include <sys/mman.h>
 #else
  #error "sys/mman.h required by GC PAL"
@@ -56,6 +38,7 @@ static_assert(sizeof(uint64_t) == 8, "unsigned long isn't 8 bytes");
 #include <sched.h> // sched_yield
 #include <errno.h>
 #include <unistd.h> // sysconf
+#include "globals.h"
 
 #if defined(_ARM_) || defined(_ARM64_)
 #define SYSCONF_GET_NUMPROCS _SC_NPROCESSORS_CONF
@@ -63,32 +46,26 @@ static_assert(sizeof(uint64_t) == 8, "unsigned long isn't 8 bytes");
 #define SYSCONF_GET_NUMPROCS _SC_NPROCESSORS_ONLN
 #endif
 
-// The number of milliseconds in a second.
-static const int tccSecondsToMilliSeconds = 1000;
-
-// The number of microseconds in a second.
-static const int tccSecondsToMicroSeconds = 1000000;
-
-// The number of microseconds in a millisecond.
-static const int tccMilliSecondsToMicroSeconds = 1000;
-
-// The number of nanoseconds in a millisecond.
-static const int tccMilliSecondsToNanoSeconds = 1000000;
-
 // The cached number of logical CPUs observed.
 static uint32_t g_logicalCpuCount = 0;
 
 // Helper memory page used by the FlushProcessWriteBuffers
-static uint8_t g_helperPage[OS_PAGE_SIZE] __attribute__((aligned(OS_PAGE_SIZE)));
+static uint8_t* g_helperPage = 0;
 
 // Mutex to make the FlushProcessWriteBuffersMutex thread safe
 static pthread_mutex_t g_flushProcessWriteBuffersMutex;
+
+uint32_t g_pageSizeUnixInl = 0;
 
 // Initialize the interface implementation
 // Return:
 //  true if it has succeeded, false if it has failed
 bool GCToOSInterface::Initialize()
 {
+    int pageSize = sysconf(_SC_PAGE_SIZE);
+
+    g_pageSizeUnixInl = uint32_t((pageSize > 0) ? pageSize : 0x1000);
+
     // Calculate and cache the number of processors on this machine
     int cpuCount = sysconf(SYSCONF_GET_NUMPROCS);
     if (cpuCount == -1)
@@ -97,6 +74,15 @@ bool GCToOSInterface::Initialize()
     }
 
     g_logicalCpuCount = cpuCount;
+
+    assert(g_helperPage == 0);
+
+    g_helperPage = static_cast<uint8_t*>(mmap(0, OS_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0));
+
+    if(g_helperPage == MAP_FAILED)
+    {
+        return false;
+    }
 
     // Verify that the s_helperPage is really aligned to the g_SystemInfo.dwPageSize
     assert((((size_t)g_helperPage) & (OS_PAGE_SIZE - 1)) == 0);
@@ -118,6 +104,14 @@ bool GCToOSInterface::Initialize()
         return false;
     }
 
+#if HAVE_MACH_ABSOLUTE_TIME
+    kern_return_t machRet;
+    if ((machRet = mach_timebase_info(&g_TimebaseInfo)) != KERN_SUCCESS)
+    {
+        return false;
+    }
+#endif // HAVE_MACH_ABSOLUTE_TIME
+
     return true;
 }
 
@@ -128,6 +122,8 @@ void GCToOSInterface::Shutdown()
     assert(ret == 0);
     ret = pthread_mutex_destroy(&g_flushProcessWriteBuffersMutex);
     assert(ret == 0);
+
+    munmap(g_helperPage, OS_PAGE_SIZE);
 }
 
 // Get numeric id of the current thread if possible on the
@@ -223,12 +219,6 @@ void GCToOSInterface::DebugBreak()
 #else
     raise(SIGTRAP);
 #endif
-}
-
-// Get number of logical processors
-uint32_t GCToOSInterface::GetLogicalCpuCount()
-{
-    return g_logicalCpuCount;
 }
 
 // Causes the calling thread to sleep for the specified number of milliseconds
@@ -354,8 +344,20 @@ bool GCToOSInterface::VirtualDecommit(void* address, size_t size)
 //  true if it has succeeded, false if it has failed
 bool GCToOSInterface::VirtualReset(void * address, size_t size, bool unlock)
 {
-    // TODO(CoreCLR#1259) pipe to madvise?
-    return false;
+    int st;
+#if HAVE_MADV_FREE
+    // Try to use MADV_FREE if supported. It tells the kernel that the application doesn't
+    // need the pages in the range. Freeing the pages can be delayed until a memory pressure
+    // occurs.
+    st = madvise(address, size, MADV_FREE);
+    if (st != 0)
+#endif    
+    {
+        // In case the MADV_FREE is not supported, use MADV_DONTNEED
+        st = madvise(address, size, MADV_DONTNEED);
+    }
+
+    return (st == 0);
 }
 
 // Check if the OS supports write watching
@@ -395,10 +397,47 @@ bool GCToOSInterface::GetWriteWatch(bool resetState, void* address, size_t size,
 //             the processor architecture
 // Return:
 //  Size of the cache
-size_t GCToOSInterface::GetLargestOnDieCacheSize(bool trueSize)
+size_t GCToOSInterface::GetCacheSizePerLogicalCpu(bool trueSize)
 {
     // TODO(segilles) processor detection
     return 0;
+}
+
+// Sets the calling thread's affinity to only run on the processor specified
+// in the GCThreadAffinity structure.
+// Parameters:
+//  affinity - The requested affinity for the calling thread. At most one processor
+//             can be provided.
+// Return:
+//  true if setting the affinity was successful, false otherwise.
+bool GCToOSInterface::SetThreadAffinity(GCThreadAffinity* affinity)
+{
+    // [LOCALGC TODO] Thread affinity for unix
+    return false;
+}
+
+// Boosts the calling thread's thread priority to a level higher than the default
+// for new threads.
+// Parameters:
+//  None.
+// Return:
+//  true if the priority boost was successful, false otherwise.
+bool GCToOSInterface::BoostThreadPriority()
+{
+    // [LOCALGC TODO] Thread priority for unix
+    return false;
+}
+
+/*++
+Function:
+  GetFullAffinityMask
+
+Get affinity mask for the specified number of processors with all
+the processors enabled.
+--*/
+static uintptr_t GetFullAffinityMask(int cpuCount)
+{
+    return ((uintptr_t)1 << (cpuCount)) - 1;
 }
 
 // Get affinity mask of the current process
@@ -414,10 +453,62 @@ size_t GCToOSInterface::GetLargestOnDieCacheSize(bool trueSize)
 //  A process affinity mask is a subset of the system affinity mask. A process is only allowed
 //  to run on the processors configured into a system. Therefore, the process affinity mask cannot
 //  specify a 1 bit for a processor when the system affinity mask specifies a 0 bit for that processor.
-bool GCToOSInterface::GetCurrentProcessAffinityMask(uintptr_t* processMask, uintptr_t* systemMask)
+bool GCToOSInterface::GetCurrentProcessAffinityMask(uintptr_t* processAffinityMask, uintptr_t* systemAffinityMask)
 {
-    // TODO(segilles) processor detection
-    return false;
+    if (g_logicalCpuCount > 64)
+    {
+        *processAffinityMask = 0;
+        *systemAffinityMask = 0;
+        return true;
+    }
+
+    uintptr_t systemMask = GetFullAffinityMask(g_logicalCpuCount);
+
+#if HAVE_SCHED_GETAFFINITY
+
+    int pid = getpid();
+    cpu_set_t cpuSet;
+    int st = sched_getaffinity(pid, sizeof(cpu_set_t), &cpuSet);
+    if (st == 0)
+    {
+        uintptr_t processMask = 0;
+
+        for (int i = 0; i < g_logicalCpuCount; i++)
+        {
+            if (CPU_ISSET(i, &cpuSet))
+            {
+                processMask |= ((uintptr_t)1) << i;
+            }
+        }
+
+        *processAffinityMask = processMask;
+        *systemAffinityMask = systemMask;
+        return true;
+    }
+    else if (errno == EINVAL)
+    {
+        // There are more processors than can fit in a cpu_set_t
+        // return zero in both masks.
+        *processAffinityMask = 0;
+        *systemAffinityMask = 0;
+        return true;
+    }
+    else
+    {
+        // We should not get any of the errors that the sched_getaffinity can return since none
+        // of them applies for the current thread, so this is an unexpected kind of failure.
+        return false;
+    }
+
+#else // HAVE_SCHED_GETAFFINITY
+
+    // There is no API to manage thread affinity, so let's return both affinity masks
+    // with all the CPUs on the system set.
+    *systemAffinityMask = systemMask;
+    *processAffinityMask = systemMask;
+    return true;
+
+#endif // HAVE_SCHED_GETAFFINITY
 }
 
 // Get number of processors assigned to the current process
@@ -425,7 +516,31 @@ bool GCToOSInterface::GetCurrentProcessAffinityMask(uintptr_t* processMask, uint
 //  The number of processors
 uint32_t GCToOSInterface::GetCurrentProcessCpuCount()
 {
-    return g_logicalCpuCount;
+    uintptr_t pmask, smask;
+
+    if (!GetCurrentProcessAffinityMask(&pmask, &smask))
+        return 1;
+
+    pmask &= smask;
+
+    int count = 0;
+    while (pmask)
+    {
+        pmask &= (pmask - 1);
+        count++;
+    }
+
+    // GetProcessAffinityMask can return pmask=0 and smask=0 on systems with more
+    // than 64 processors, which would leave us with a count of 0.  Since the GC
+    // expects there to be at least one processor to run on (and thus at least one
+    // heap), we'll return 64 here if count is 0, since there are likely a ton of
+    // processors available in that case.  The GC also cannot (currently) handle
+    // the case where there are more than 64 processors, so we will return a
+    // maximum of 64 here.
+    if (count == 0 || count > 64)
+        count = 64;
+
+    return count;
 }
 
 // Return the size of the user-mode portion of the virtual address space of this process.
@@ -549,67 +664,17 @@ uint32_t GCToOSInterface::GetLowPrecisionTimeStamp()
     return retval;
 }
 
-// Parameters of the GC thread stub
-struct GCThreadStubParam
-{
-    GCThreadFunction GCThreadFunction;
-    void* GCThreadParam;
-};
-
-// GC thread stub to convert GC thread function to an OS specific thread function
-static void* GCThreadStub(void* param)
-{
-    GCThreadStubParam *stubParam = (GCThreadStubParam*)param;
-    GCThreadFunction function = stubParam->GCThreadFunction;
-    void* threadParam = stubParam->GCThreadParam;
-
-    delete stubParam;
-
-    function(threadParam);
-
-    return NULL;
-}
-
-// Create a new thread for GC use
-// Parameters:
-//  function - the function to be executed by the thread
-//  param    - parameters of the thread
-//  affinity - processor affinity of the thread
+// Gets the total number of processors on the machine, not taking
+// into account current process affinity.
 // Return:
-//  true if it has succeeded, false if it has failed
-bool GCToOSInterface::CreateThread(GCThreadFunction function, void* param, GCThreadAffinity* affinity)
+//  Number of processors on the machine
+uint32_t GCToOSInterface::GetTotalProcessorCount()
 {
-    std::unique_ptr<GCThreadStubParam> stubParam(new (std::nothrow) GCThreadStubParam());
-    if (!stubParam)
-    {
-        return false;
-    }
-
-    stubParam->GCThreadFunction = function;
-    stubParam->GCThreadParam = param;
-
-    pthread_attr_t attrs;
-
-    int st = pthread_attr_init(&attrs);
-    assert(st == 0);
-
-    // Create the thread as detached, that means not joinable
-    st = pthread_attr_setdetachstate(&attrs, PTHREAD_CREATE_DETACHED);
-    assert(st == 0);
-
-    pthread_t threadId;
-    st = pthread_create(&threadId, &attrs, GCThreadStub, stubParam.get());
-
-    if (st == 0)
-    {
-        stubParam.release();
-    }
-
-    int st2 = pthread_attr_destroy(&attrs);
-    assert(st2 == 0);
-
-    return (st == 0);
+    // Calculated in GCToOSInterface::Initialize using
+    // sysconf(_SC_NPROCESSORS_ONLN)
+    return g_logicalCpuCount;
 }
+
 
 // Initialize the critical section
 void CLRCriticalSection::Initialize()

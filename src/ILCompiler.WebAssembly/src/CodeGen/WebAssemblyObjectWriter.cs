@@ -6,19 +6,15 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 
 using ILCompiler.DependencyAnalysisFramework;
 
 using Internal.Text;
 using Internal.TypeSystem;
-using Internal.TypeSystem.TypesDebugInfo;
 using ObjectData = ILCompiler.DependencyAnalysis.ObjectNode.ObjectData;
 
 using LLVMSharp;
 using ILCompiler.CodeGen;
-using System.Linq;
-using Internal.IL;
 
 namespace ILCompiler.DependencyAnalysis
 {
@@ -27,7 +23,7 @@ namespace ILCompiler.DependencyAnalysis
     /// </summary>
     internal class WebAssemblyObjectWriter : IDisposable
     {
-        public static string GetBaseSymbolName(ISymbolNode symbol, NameMangler nameMangler, bool objectWriterUse = false)
+        private string GetBaseSymbolName(ISymbolNode symbol, NameMangler nameMangler, bool objectWriterUse = false)
         {
             if (symbol is WebAssemblyMethodCodeNode)
             {
@@ -36,15 +32,15 @@ namespace ILCompiler.DependencyAnalysis
 
             if (symbol is ObjectNode)
             {
-                ObjectNode objNode = (ObjectNode)symbol;
                 ISymbolDefinitionNode symbolDefNode = (ISymbolDefinitionNode)symbol;
+                var symbolName = _nodeFactory.GetSymbolAlternateName(symbolDefNode) ?? symbol.GetMangledName(nameMangler);
                 if (symbolDefNode.Offset == 0)
                 {
-                    return symbol.GetMangledName(nameMangler);
+                    return symbolName;
                 }
                 else
                 {
-                    return symbol.GetMangledName(nameMangler) + "___REALBASE";
+                    return symbolName + "___REALBASE";
                 }
             }
             else if (symbol is ObjectAndOffsetSymbolNode)
@@ -387,16 +383,8 @@ namespace ILCompiler.DependencyAnalysis
                     if (ObjectSymbolRefs.TryGetValue(curOffset, out symbolRef))
                     {
                         LLVMValueRef pointedAtValue = symbolRef.ToLLVMValueRef(module);
-                        //TODO: why did this come back null
-                        if (pointedAtValue.Pointer != IntPtr.Zero)
-                        {
-                            var ptrValue = LLVM.ConstBitCast(pointedAtValue, intPtrType);
-                            entries.Add(ptrValue);
-                        }
-                        else
-                        {
-                            entries.Add(LLVM.ConstPointerNull(intPtrType));
-                        }
+                        var ptrValue = LLVM.ConstBitCast(pointedAtValue, intPtrType);
+                        entries.Add(ptrValue);
                     }
                     else
                     {
@@ -424,7 +412,6 @@ namespace ILCompiler.DependencyAnalysis
 
         public void DoneObjectNode()
         {
-            int pointerSize = _nodeFactory.Target.PointerSize;
             EmitAlignment(_nodeFactory.Target.PointerSize);
             Debug.Assert(_nodeFactory.Target.PointerSize == 4);
             int countOfPointerSizedElements = _currentObjectData.Count / _nodeFactory.Target.PointerSize;
@@ -837,7 +824,17 @@ namespace ILCompiler.DependencyAnalysis
                                     delta = Relocation.ReadValue(reloc.RelocType, location);
                                 }
                             }
-                            int size = objectWriter.EmitSymbolReference(reloc.Target, (int)delta, reloc.RelocType);
+                            ISymbolNode symbolToWrite = reloc.Target;
+                            var eeTypeNode = reloc.Target as EETypeNode;
+                            if (eeTypeNode != null)
+                            {
+                                if (eeTypeNode.ShouldSkipEmittingObjectNode(factory))
+                                {
+                                    symbolToWrite = factory.ConstructedTypeSymbol(eeTypeNode.Type);
+                                }
+                            }
+
+                            int size = objectWriter.EmitSymbolReference(symbolToWrite, (int)delta, reloc.RelocType);
 
                             /*
                              WebAssembly has no thumb 

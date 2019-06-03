@@ -33,6 +33,9 @@ namespace ILCompiler
             _devirtualizationManager = new DependencyAnalysis.ReadyToRun.DevirtualizationManager(group);
 
             _inputModule = context.GetModuleFromPath(_inputFilePath);
+
+            // R2R field layout needs compilation group information
+            ((ReadyToRunCompilerContext)context).SetCompilationGroup(group);
         }
 
         public override CompilationBuilder UseBackendOptions(IEnumerable<string> options)
@@ -76,7 +79,7 @@ namespace ILCompiler
             var interopStubManager = new EmptyInteropStubManager(_compilationGroup, _context, new InteropStateManager(_context.GeneratedAssembly));
 
             ModuleTokenResolver moduleTokenResolver = new ModuleTokenResolver(_compilationGroup, _context);
-            SignatureContext signatureContext = new SignatureContext(moduleTokenResolver);
+            SignatureContext signatureContext = new SignatureContext(_inputModule, moduleTokenResolver);
 
             ReadyToRunCodegenNodeFactory factory = new ReadyToRunCodegenNodeFactory(
                 _context,
@@ -120,6 +123,7 @@ namespace ILCompiler
                 _compilationRoots,
                 _ilProvider,
                 _debugInformationProvider,
+                _pinvokePolicy,
                 _logger,
                 _devirtualizationManager,
                 jitConfig,

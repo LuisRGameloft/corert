@@ -114,6 +114,11 @@ namespace Internal.Reflection.Execution
             return ReflectionCoreExecution.ExecutionDomain.GetMethod(declaringTypeHandle, methodHandle, genericMethodTypeArgumentHandles: null);
         }
 
+        public sealed override Assembly GetAssemblyForHandle(RuntimeTypeHandle typeHandle)
+        {
+            return Type.GetTypeFromHandle(typeHandle).Assembly;
+        }
+
         public sealed override IntPtr TryGetStaticClassConstructionContext(RuntimeTypeHandle runtimeTypeHandle)
         {
             return _executionEnvironment.TryGetStaticClassConstructionContext(runtimeTypeHandle);
@@ -139,6 +144,7 @@ namespace Internal.Reflection.Execution
             }
         }
 
+#if PROJECTN
         /// <summary>
         /// Reflection-based implementation of ValueType.GetHashCode. Matches the implementation created by the ValueTypeTransform.
         /// </summary>
@@ -216,6 +222,7 @@ namespace Internal.Reflection.Execution
 
             return true;
         }
+#endif
 
         /// <summary>
         /// Retrieves the default value for a parameter of a method.

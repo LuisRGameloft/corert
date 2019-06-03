@@ -1266,12 +1266,15 @@ REDHAWK_PALEXPORT Int32 PalGetModuleFileName(_Out_ const TCHAR** pModuleNameOut,
 
 GCSystemInfo g_SystemInfo;
 
+uint32_t g_pageSizeUnixInl = 0;
+
 // Initialize the g_SystemInfo
 bool InitializeSystemInfo()
 {
     long pagesize = getpagesize();
     g_SystemInfo.dwPageSize = pagesize;
     g_SystemInfo.dwAllocationGranularity = pagesize;
+    g_pageSizeUnixInl = pagesize;
 
     int nrcpus = 0;
 
@@ -1472,12 +1475,6 @@ void GCToOSInterface::DebugBreak()
     __debugbreak();
 }
 
-// Get number of logical processors
-uint32_t GCToOSInterface::GetLogicalCpuCount()
-{
-    return g_cLogicalCpus;
-}
-
 // Causes the calling thread to sleep for the specified number of milliseconds
 // Parameters:
 //  sleepMSec   - time to sleep before switching to another thread
@@ -1626,10 +1623,35 @@ bool GCToOSInterface::GetWriteWatch(bool resetState, void* address, size_t size,
 //             the processor architecture
 // Return:
 //  Size of the cache
-size_t GCToOSInterface::GetLargestOnDieCacheSize(bool trueSize)
+size_t GCToOSInterface::GetCacheSizePerLogicalCpu(bool trueSize)
 {
     // UNIXTODO: implement this
     return 0;
+}
+
+// Sets the calling thread's affinity to only run on the processor specified
+// in the GCThreadAffinity structure.
+// Parameters:
+//  affinity - The requested affinity for the calling thread. At most one processor
+//             can be provided.
+// Return:
+//  true if setting the affinity was successful, false otherwise.
+bool GCToOSInterface::SetThreadAffinity(GCThreadAffinity* affinity)
+{
+    // UNIXTODO: implement this
+    return false;
+}
+
+// Boosts the calling thread's thread priority to a level higher than the default
+// for new threads.
+// Parameters:
+//  None.
+// Return:
+//  true if the priority boost was successful, false otherwise.
+bool GCToOSInterface::BoostThreadPriority()
+{
+    // UNIXTODO: implement this
+    return false;
 }
 
 // Get affinity mask of the current process
@@ -1814,45 +1836,9 @@ static void* GCThreadStub(void* param)
     return NULL;
 }
 
-// Create a new thread for GC use
-// Parameters:
-//  function - the function to be executed by the thread
-//  param    - parameters of the thread
-//  affinity - processor affinity of the thread
-// Return:
-//  true if it has succeeded, false if it has failed
-bool GCToOSInterface::CreateThread(GCThreadFunction function, void* param, GCThreadAffinity* affinity)
+uint32_t GCToOSInterface::GetTotalProcessorCount()
 {
-    NewHolder<GCThreadStubParam> stubParam = new (nothrow) GCThreadStubParam();
-    if (stubParam == NULL)
-    {
-        return false;
-    }
-
-    stubParam->GCThreadFunction = function;
-    stubParam->GCThreadParam = param;
-
-    pthread_attr_t attrs;
-
-    int st = pthread_attr_init(&attrs);
-    ASSERT(st == 0);
-
-    // Create the thread as detached, that means not joinable
-    st = pthread_attr_setdetachstate(&attrs, PTHREAD_CREATE_DETACHED);
-    ASSERT(st == 0);
-
-    pthread_t threadId;
-    st = pthread_create(&threadId, &attrs, GCThreadStub, stubParam);
-
-    if (st == 0)
-    {
-        stubParam.SuppressRelease();
-    }
-
-    int st2 = pthread_attr_destroy(&attrs);
-    ASSERT(st2 == 0);
-
-    return (st == 0);
+    return g_SystemInfo.dwNumberOfProcessors;
 }
 
 // Initialize the critical section

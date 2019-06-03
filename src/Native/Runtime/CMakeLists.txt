@@ -11,6 +11,7 @@ set(COMMON_RUNTIME_SOURCES
     event.cpp
     FinalizerHelpers.cpp
     GCHelpers.cpp
+    gctoclreventsink.cpp
     gcheaputilities.cpp
     GCMemoryHelpers.cpp
     gcrhenv.cpp
@@ -45,6 +46,10 @@ set(COMMON_RUNTIME_SOURCES
     # module.cpp
     # RHCodeMan.cpp
 
+    ../gc/gceventstatus.cpp
+    ../gc/gcload.cpp
+    ../gc/gcconfig.cpp
+    ../gc/gchandletable.cpp
     ../gc/gccommon.cpp
     ../gc/gceewks.cpp
     ../gc/gcwks.cpp
@@ -81,6 +86,8 @@ if(WIN32)
   list(APPEND COMMON_RUNTIME_SOURCES
     windows/PalRedhawkCommon.cpp
     windows/PalRedhawkMinWin.cpp
+    eventtrace.cpp
+    rheventtrace.cpp
   )
 
   list(APPEND FULL_RUNTIME_SOURCES
@@ -190,6 +197,8 @@ add_definitions(-DFEATURE_EMBEDDED_CONFIG)
 if(WIN32)
   # There is a problem with undefined symbol g_pConfig, windows don't care since it is in template method, but clang does 
   add_definitions(-DSTRESS_HEAP)
+  add_definitions(-DFEATURE_ETW)
+  add_definitions(-DFEATURE_EVENT_TRACE)
   add_compile_options(/GS)
   add_compile_options(/W1)
   add_compile_options(/Zc:wchar_t)

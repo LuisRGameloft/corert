@@ -29,7 +29,7 @@ rd /s /q %TestFolder%\native
 ::
 if /i not "%NativeCodeGen%" == "readytorun" (
     if "%CoreRT_BuildArch%" == "x64" (
-        call "%VS150COMNTOOLS%\..\..\VC\Auxiliary\Build\vcvarsall.bat" x64
+        call "%VSINSTALLDIR%\VC\Auxiliary\Build\vcvarsall.bat" x64
     )
 )
 
@@ -74,7 +74,7 @@ goto :GetNextParameter
 
 :RunTest
 
-set CoreRunCommandLine="%CoreRT_CliDir%\dotnet.exe" %CoreRT_ReadyToRunTestHarness% --corerun %CoreRT_CoreCLRRuntimeDir%\CoreRun.exe --in %TestFolder%native\%TestFileName%.ni.exe --noetl %TestParameters%
+set CoreRunCommandLine="%CoreRT_CliDir%\dotnet.exe" %CoreRT_ReadyToRunTestHarness% --corerun %CoreRT_CoreCLRRuntimeDir%\CoreRun.exe --in %TestFolder%native\%TestFileName%.exe --noetl %TestParameters%
 
 if /i "%NativeCodeGen%" == "readytorun" (
     echo %CoreRunCommandLine%

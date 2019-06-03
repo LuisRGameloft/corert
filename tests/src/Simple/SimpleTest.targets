@@ -8,6 +8,7 @@
     <DebugType Condition="'$(DebugType)' == ''">portable</DebugType>
     <DefineConstants Condition="$(NativeCodeGen) == 'cpp'">$(DefineConstants);CODEGEN_CPP</DefineConstants>
     <RootAllApplicationAssemblies>false</RootAllApplicationAssemblies>
+    <IlcGenerateCompleteTypeMetadata>false</IlcGenerateCompleteTypeMetadata>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -31,7 +32,7 @@
 
   <ItemGroup>
     <!-- For Ready To Run testing, use the CoreCLR framework assemblies instead of the AOT ones -->
-    <IlcReference Condition="'$(NativeCodeGen)' == 'readytorun'" Include="$(CoreRT_CoreCLRRuntimeDir)\*.dll" />
+    <IlcReference Condition="'$(NativeCodeGen)' == 'readytorun'" Include="$(CoreRT_CoreCLRRuntimeDir)/*.dll" />
   </ItemGroup>
 
   <!--

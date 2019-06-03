@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Reflection.Runtime.General;
 
 using Internal.Runtime.Augments;
 
@@ -67,6 +68,41 @@ namespace Internal.Reflection.Execution
         public sealed override FieldAccessor CreateLiteralFieldAccessor(object value, RuntimeTypeHandle fieldTypeHandle)
         {
             return new LiteralFieldAccessor(value, fieldTypeHandle); 
+        }
+
+        public sealed override EnumInfo GetEnumInfo(RuntimeTypeHandle typeHandle)
+        {
+            // Handle the weird case of an enum type nested under a generic type that makes the
+            // enum itself generic
+            RuntimeTypeHandle typeDefHandle = typeHandle;
+            if (RuntimeAugments.IsGenericType(typeHandle))
+            {
+                typeDefHandle = RuntimeAugments.GetGenericDefinition(typeHandle);
+            }
+
+            // If the type is reflection blocked, we pretend there are no enum values defined
+            if (ReflectionExecution.ExecutionEnvironment.IsReflectionBlocked(typeDefHandle))
+            {
+                return new EnumInfo(RuntimeAugments.GetEnumUnderlyingType(typeHandle), Array.Empty<object>(), Array.Empty<string>(), false);
+            }
+
+            QTypeDefinition qTypeDefinition;
+            if (!ReflectionExecution.ExecutionEnvironment.TryGetMetadataForNamedType(typeDefHandle, out qTypeDefinition))
+            {
+                throw ReflectionCoreExecution.ExecutionDomain.CreateMissingMetadataException(Type.GetTypeFromHandle(typeDefHandle));
+            }
+
+            if (qTypeDefinition.IsNativeFormatMetadataBased)
+            {
+                return NativeFormatEnumInfo.Create(typeHandle, qTypeDefinition.NativeFormatReader, qTypeDefinition.NativeFormatHandle);
+            }
+#if ECMA_METADATA_SUPPORT
+            if (qTypeDefinition.IsEcmaFormatMetadataBased)
+            {
+                return EcmaFormatEnumInfo.Create(typeHandle, qTypeDefinition.EcmaFormatReader, qTypeDefinition.EcmaFormatHandle);
+            }
+#endif
+            return null;
         }
     }
 }

@@ -46,11 +46,12 @@ namespace ILCompiler
             IEnumerable<ICompilationRootProvider> roots,
             ILProvider ilProvider,
             DebugInformationProvider debugInformationProvider,
+            PInvokeILEmitterConfiguration pInvokePolicy,
             Logger logger,
             DevirtualizationManager devirtualizationManager,
             JitConfigProvider configProvider,
             string inputFilePath)
-            : base(dependencyGraph, nodeFactory, roots, ilProvider, debugInformationProvider, devirtualizationManager, logger)
+            : base(dependencyGraph, nodeFactory, roots, ilProvider, debugInformationProvider, devirtualizationManager, pInvokePolicy, logger)
         {
             NodeFactory = nodeFactory;
             SymbolNodeFactory = new ReadyToRunSymbolNodeFactory(nodeFactory);
@@ -144,12 +145,6 @@ namespace ILCompiler
                     Logger.Writer.WriteLine($"Info: Method `{method}` was not compiled because `{ex.Message}` requires runtime JIT");
                 }
             }
-        }
-
-        public override bool CanInline(MethodDesc callerMethod, MethodDesc calleeMethod)
-        {
-            // Allow inlining if the target method is within the same version bubble
-            return NodeFactory.CompilationModuleGroup.ContainsMethodBody(calleeMethod, unboxingStub: false);
         }
 
         public override ObjectNode GetFieldRvaData(FieldDesc field) => SymbolNodeFactory.GetRvaFieldNode(field);

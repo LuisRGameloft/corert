@@ -102,7 +102,7 @@ namespace ILCompiler
             {
                 if (dynamicDegreeAttribute.Value != "Required All")
                     throw new NotSupportedException();
-                
+
                 RootType(rootProvider, type, "RD.XML root");
             }
 
@@ -157,17 +157,51 @@ namespace ILCompiler
         {
             rootProvider.AddCompilationRoot(type, reason);
 
+            // Instantiate generic types over something that will be useful at runtime
             if (type.IsGenericDefinition)
-                return;
-            
+            {
+                Instantiation inst = TypeExtensions.GetInstantiationThatMeetsConstraints(type.Instantiation, allowCanon: true);
+                if (inst.IsNull)
+                    return;
+
+                type = ((MetadataType)type).MakeInstantiatedType(inst);
+
+                rootProvider.AddCompilationRoot(type, reason);
+            }
+
+            // Also root base types. This is so that we make methods on the base types callable.
+            // This helps in cases like "class Foo : Bar<int> { }" where we discover new
+            // generic instantiations.
+            TypeDesc baseType = type.BaseType;
+            while (baseType != null)
+            {
+                baseType = baseType.NormalizeInstantiation();
+                RootType(rootProvider, baseType, reason);
+                baseType = baseType.BaseType;
+            }
+
             if (type.IsDefType)
             {
                 foreach (var method in type.GetMethods())
                 {
                     if (method.HasInstantiation)
-                        continue;
-
-                    RootMethod(rootProvider, method, reason);
+                    {
+                        // Generic methods on generic types could end up as Foo<object>.Bar<__Canon>(),
+                        // so for simplicity, we just don't handle them right now to make this more
+                        // predictable.
+                        if (!method.OwningType.HasInstantiation)
+                        {
+                            Instantiation inst = TypeExtensions.GetInstantiationThatMeetsConstraints(method.Instantiation, allowCanon: false);
+                            if (!inst.IsNull)
+                            {
+                                RootMethod(rootProvider, method.MakeInstantiatedMethod(inst), reason);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        RootMethod(rootProvider, method, reason);
+                    }
                 }
             }
         }

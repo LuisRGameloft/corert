@@ -1,6 +1,9 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
+#ifndef __GCENV_H__
+#define __GCENV_H__
+
 #define FEATURE_PREMORTEM_FINALIZATION
 
 #ifdef _MSC_VER
@@ -27,6 +30,20 @@
 #include "PalRedhawk.h"
 #include "gcrhinterface.h"
 #include "gcenv.interlocked.inl"
+
+#include "slist.h"
+#include "RWLock.h"
+#include "shash.h"
+#include "module.h"
+#include "RuntimeInstance.h"
+#include "eetype.inl"
+#include "Volatile.h"
+
+#ifdef PLATFORM_UNIX
+#include "gcenv.unix.inl"
+#else
+#include "gcenv.windows.inl"
+#endif
 
 #include "stressLog.h"
 #ifdef FEATURE_ETW
@@ -208,23 +225,7 @@ class SyncBlockCache
 {
 public:
     static SyncBlockCache *GetSyncBlockCache() { return &g_sSyncBlockCache; }
-    void GCWeakPtrScan(void *pCallback, uintptr_t pCtx, int dummy)
-    {
-        UNREFERENCED_PARAMETER(pCallback);
-        UNREFERENCED_PARAMETER(pCtx);
-        UNREFERENCED_PARAMETER(dummy);
-    }
-    void GCDone(uint32_t demoting, int max_gen)
-    {
-        UNREFERENCED_PARAMETER(demoting);
-        UNREFERENCED_PARAMETER(max_gen);
-    }
     void VerifySyncTableEntry() {}
-
-    DWORD GetActiveCount()
-    {
-        return 0;
-    }
 };
 
 #endif // VERIFY_HEAP
@@ -241,17 +242,9 @@ typedef DPTR(uint32_t) PTR_uint32_t;
 
 enum CLRDataEnumMemoryFlags : int;
 
-enum ThreadType
-{
-    ThreadType_GC = 137,
-};
+/* _TRUNCATE */
+#if !defined (_TRUNCATE)
+#define _TRUNCATE ((size_t)-1)
+#endif  /* !defined (_TRUNCATE) */
 
-#undef ClrFlsSetThreadType
-#define ClrFlsSetThreadType(threadType) SetGCSpecialThread(threadType)
-void SetGCSpecialThread(ThreadType threadType);
-
-#if defined(ENABLE_PERF_COUNTERS) || defined(FEATURE_EVENT_TRACE)
-// Note this is not updated in a thread safe way so the value may not be accurate. We get
-// it accurately in full GCs if the handle count is requested.
-extern DWORD g_dwHandles;
-#endif // ENABLE_PERF_COUNTERS || FEATURE_EVENT_TRACE
+#endif // __GCENV_H__

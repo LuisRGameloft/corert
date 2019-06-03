@@ -55,6 +55,9 @@
     <Compile Include="..\..\Common\src\TypeSystem\Canon\MetadataType.Canon.cs">
       <Link>TypeSystem\Canon\MetadataType.Canon.cs</Link>
     </Compile>
+    <Compile Include="..\..\Common\src\TypeSystem\Canon\MethodDelegator.Canon.cs">
+      <Link>TypeSystem\Canon\MethodDelegator.Canon.cs</Link>
+    </Compile>
     <Compile Include="..\..\Common\src\TypeSystem\Canon\MethodDesc.Canon.cs">
       <Link>TypeSystem\Canon\MethodDesc.Canon.cs</Link>
     </Compile>
@@ -78,6 +81,9 @@
     </Compile>
     <Compile Include="..\..\Common\src\TypeSystem\CodeGen\FieldDesc.CodeGen.cs">
       <Link>TypeSystem\CodeGen\FieldDesc.CodeGen.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Common\src\TypeSystem\CodeGen\MethodDelegator.CodeGen.cs">
+      <Link>TypeSystem\CodeGen\MethodDelegator.CodeGen.cs</Link>
     </Compile>
     <Compile Include="..\..\Common\src\TypeSystem\CodeGen\MethodDesc.CodeGen.cs">
       <Link>TypeSystem\CodeGen\MethodDesc.CodeGen.cs</Link>
@@ -262,6 +268,9 @@
     <Compile Include="..\..\Common\src\TypeSystem\Common\VirtualMethodAlgorithm.cs">
       <Link>TypeSystem\Common\VirtualMethodAlgorithm.cs</Link>
     </Compile>
+    <Compile Include="..\..\Common\src\TypeSystem\Common\MethodDelegator.cs">
+      <Link>TypeSystem\Common\MethodDelegator.cs</Link>
+    </Compile>
     <Compile Include="..\..\Common\src\TypeSystem\Common\MethodDesc.cs">
       <Link>TypeSystem\Common\MethodDesc.cs</Link>
     </Compile>
@@ -304,6 +313,9 @@
     <Compile Include="..\..\Common\src\TypeSystem\Ecma\EcmaField.CodeGen.cs">
       <Link>Ecma\EcmaField.CodeGen.cs</Link>
     </Compile>
+    <Compile Include="..\..\Common\src\TypeSystem\Ecma\EcmaField.Serialization.cs">
+      <Link>Ecma\EcmaField.Serialization.cs</Link>
+    </Compile>
     <Compile Include="..\..\Common\src\TypeSystem\Ecma\EcmaGenericParameter.Sorting.cs">
       <Link>Ecma\EcmaGenericParameter.Sorting.cs</Link>
     </Compile>
@@ -312,6 +324,9 @@
     </Compile>
     <Compile Include="..\..\Common\src\TypeSystem\Ecma\EcmaModule.Sorting.cs">
       <Link>Ecma\EcmaModule.Sorting.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Common\src\TypeSystem\Ecma\EcmaType.Serialization.cs">
+      <Link>Ecma\EcmaType.Serialization.cs</Link>
     </Compile>
     <Compile Include="..\..\Common\src\TypeSystem\Ecma\EcmaType.Sorting.cs">
       <Link>Ecma\EcmaType.Sorting.cs</Link>
@@ -523,6 +538,12 @@
     <Compile Include="..\..\Common\src\TypeSystem\Interop\IL\NativeStructType.cs">
       <Link>TypeSystem\Interop\IL\NativeStructType.cs</Link>
     </Compile>
+    <Compile Include="..\..\Common\src\TypeSystem\Serialization\FieldDesc.Serialization.cs">
+      <Link>TypeSystem\CodeGen\FieldDesc.Serialization.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Common\src\TypeSystem\Serialization\TypeDesc.Serialization.cs">
+      <Link>TypeSystem\CodeGen\TypeDesc.Serialization.cs</Link>
+    </Compile>
     <Compile Include="..\..\Common\src\TypeSystem\Sorting\FieldDesc.Sorting.cs">
       <Link>TypeSystem\Sorting\FieldDesc.Sorting.cs</Link>
     </Compile>
@@ -570,6 +591,9 @@
     </Compile>
     <Compile Include="..\..\Common\src\TypeSystem\Interop\MetadataType.Interop.cs">
       <Link>TypeSystem\Interop\MetadataType.Interop.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Common\src\TypeSystem\Interop\MethodDelegator.Interop.cs">
+      <Link>TypeSystem\Interop\MethodDelegator.Interop.cs</Link>
     </Compile>
     <Compile Include="..\..\Common\src\TypeSystem\Interop\MethodDesc.Interop.cs">
       <Link>TypeSystem\Interop\MethodDesc.Interop.cs</Link>

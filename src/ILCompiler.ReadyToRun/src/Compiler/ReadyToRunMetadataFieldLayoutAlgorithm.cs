@@ -25,9 +25,23 @@ namespace ILCompiler
         /// </summary>
         private ModuleFieldLayoutMap _moduleFieldLayoutMap;
 
+        /// <summary>
+        /// Compilation module group is used to identify which types extend beyond the current version bubble.
+        /// </summary>
+        private CompilationModuleGroup _compilationGroup;
+
         public ReadyToRunMetadataFieldLayoutAlgorithm()
         {
             _moduleFieldLayoutMap = new ModuleFieldLayoutMap();
+        }
+
+        /// <summary>
+        /// Set up compilation group needed for proper calculation of base class alignment in auto layout.
+        /// </summary>
+        /// <param name="compilationGroup"></param>
+        public void SetCompilationGroup(CompilationModuleGroup compilationGroup)
+        {
+            _compilationGroup = compilationGroup;
         }
 
         public override ComputedStaticFieldLayout ComputeStaticFieldLayout(DefType defType, StaticLayoutKind layoutKind)
@@ -674,7 +688,7 @@ namespace ILCompiler
 
         protected override ComputedInstanceFieldLayout ComputeInstanceFieldLayout(MetadataType type, int numInstanceFields)
         {
-            if (type.IsValueType && MarshalUtils.IsBlittableType(type))
+            if (type.IsValueType && (MarshalUtils.IsBlittableType(type) || MarshalUtils.IsManagedSequentialType(type)))
             {
                 return ComputeSequentialFieldLayout(type, numInstanceFields);
             }
@@ -683,5 +697,33 @@ namespace ILCompiler
                 return ComputeAutoFieldLayout(type, numInstanceFields);
             }
         }
+
+        /// <summary>
+        /// This method decides whether the type needs aligned base offset in order to have layout resilient to 
+        /// base class layout changes.
+        /// </summary>
+        protected override void AlignBaseOffsetIfNecessary(MetadataType type, ref LayoutInt baseOffset)
+        {
+            if (type.IsValueType)
+            {
+                return;
+            }
+            DefType baseType = type.BaseType;
+            if (baseType == null || baseType.IsObject)
+            {
+                return;
+            }
+            HashSet<DefType> recursionGuard = new HashSet<DefType>();
+            if (!_compilationGroup.ContainsTypeLayout(baseType))
+            {
+                LayoutInt alignment = new LayoutInt(type.Context.Target.PointerSize);
+                if (type.RequiresAlign8())
+                {
+                    alignment = new LayoutInt(8);
+                }
+                baseOffset = LayoutInt.AlignUp(baseOffset, alignment, type.Context.Target);
+            }
+        }
+
     }
 }

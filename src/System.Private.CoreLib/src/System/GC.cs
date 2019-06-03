@@ -391,7 +391,7 @@ namespace System
         // Block until the next finalization pass is complete.
         public static void WaitForPendingFinalizers()
         {
-            RuntimeImports.RhWaitForPendingFinalizers(RuntimeThread.ReentrantWaitsEnabled);
+            RuntimeImports.RhWaitForPendingFinalizers(Thread.ReentrantWaitsEnabled);
         }
 
         public static void SuppressFinalize(object obj)
@@ -632,24 +632,26 @@ namespace System
             return RuntimeImports.RhGetAllocatedBytesForCurrentThread();
         }
 
-        internal static void GetMemoryInfo(out uint highMemLoadThreshold,
-                                           out ulong totalPhysicalMem,
-                                           out uint lastRecordedMemLoad,
-                                           // The next two are size_t
-                                           out UIntPtr lastRecordedHeapSize,
-                                           out UIntPtr lastRecordedFragmentation)
+        public static long GetTotalAllocatedBytes(bool precise = false)
         {
             // TODO: https://github.com/dotnet/corert/issues/5680
-            highMemLoadThreshold = default;
-            totalPhysicalMem = default;
-            lastRecordedMemLoad = default;
-            lastRecordedHeapSize = default;
-            lastRecordedFragmentation = default;
+            return default;
+        }
+
+        public static GCMemoryInfo GetGCMemoryInfo()
+        {
+            // TODO: https://github.com/dotnet/corert/issues/5680
+            return default;
         }
 
         internal static ulong GetSegmentSize()
         {
             return RuntimeImports.RhGetGCSegmentSize();
+        }
+
+        internal static T[] AllocateUninitializedArray<T>(int length)
+        {
+            return new T[length];
         }
     }
 }

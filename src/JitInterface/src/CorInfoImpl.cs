@@ -2,11 +2,6 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-#if SUPPORT_JIT
-extern alias System_Private_CoreLib;
-using TextWriter = System_Private_CoreLib::System.IO.TextWriter;
-#endif
-
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -22,6 +17,7 @@ using Internal.Runtime.CompilerServices;
 
 using Internal.IL;
 using Internal.TypeSystem;
+using Internal.TypeSystem.Ecma;
 
 using ILCompiler;
 using ILCompiler.DependencyAnalysis;
@@ -110,6 +106,8 @@ namespace Internal.JitInterface
 
         private JitConfigProvider _jitConfig;
 
+        private readonly UnboxingMethodDescFactory _unboxingThunkFactory;
+
         public CorInfoImpl(JitConfigProvider jitConfig)
         {
             //
@@ -126,6 +124,8 @@ namespace Internal.JitInterface
             }
 
             _unmanagedCallbacks = GetUnmanagedCallbacks(out _keepAlive);
+
+            _unboxingThunkFactory = new UnboxingMethodDescFactory();
         }
 
         public TextWriter Log
@@ -243,9 +243,13 @@ namespace Internal.JitInterface
             var relocs = _relocs.ToArray();
             Array.Sort(relocs, (x, y) => (x.Offset - y.Offset));
 
+            int alignment = _jitConfig.HasFlag(CorJitFlag.CORJIT_FLAG_SIZE_OPT) ?
+                _compilation.NodeFactory.Target.MinimumFunctionAlignment :
+                _compilation.NodeFactory.Target.OptimumFunctionAlignment;
+
             var objectData = new ObjectNode.ObjectData(_code,
                                                        relocs,
-                                                       _compilation.NodeFactory.Target.MinimumFunctionAlignment,
+                                                       alignment,
                                                        new ISymbolDefinitionNode[] { _methodCodeNode });
             ObjectNode.ObjectData ehInfo = _ehClauses != null ? EncodeEHInfo() : null;
             DebugEHClauseInfo[] debugEHClauseInfos = null;
@@ -260,7 +264,11 @@ namespace Internal.JitInterface
                 }
             }
 
-            _methodCodeNode.SetCode(objectData);
+            _methodCodeNode.SetCode(objectData
+#if !SUPPORT_JIT && !READYTORUN
+                , isFoldable: (_compilation._compilationOptions & RyuJitCompilationOptions.MethodBodyFolding) != 0
+#endif
+                );
 
             _methodCodeNode.InitializeFrameInfos(_frameInfos);
             _methodCodeNode.InitializeDebugEHClauseInfos(debugEHClauseInfos);
@@ -763,14 +771,6 @@ namespace Internal.JitInterface
                 return null;
             }
 
-            if (implType.IsValueType)
-            {
-                // TODO: If we resolve to a method on a valuetype, we should return a MethodDesc for the unboxing stub
-                // so that RyuJIT won't try to inline it. We don't have MethodDescs for unboxing stubs in the
-                // type system though.
-                return null;
-            }
-
             MethodDesc decl = HandleToObject(baseMethod);
             Debug.Assert(!decl.HasInstantiation);
 
@@ -786,11 +786,38 @@ namespace Internal.JitInterface
 
             MethodDesc impl = _compilation.ResolveVirtualMethod(decl, implType);
 
-            return impl != null ? ObjectToHandle(impl) : null;
+            if (impl != null)
+            {
+                if (impl.OwningType.IsValueType)
+                {
+                    impl = _unboxingThunkFactory.GetUnboxingMethod(impl);
+                }
+
+                return ObjectToHandle(impl);
+            }
+
+            return null;
         }
 
         private CORINFO_METHOD_STRUCT_* getUnboxedEntry(CORINFO_METHOD_STRUCT_* ftn, byte* requiresInstMethodTableArg)
-        { throw new NotImplementedException(); }
+        {
+            MethodDesc result = null;
+            bool requiresInstMTArg = false;
+
+            MethodDesc method = HandleToObject(ftn);
+            if (method.IsUnboxingThunk())
+            {
+                result = method.GetUnboxedMethod();
+                requiresInstMTArg = method.RequiresInstMethodTableArg();
+            }
+
+            if (requiresInstMethodTableArg != null)
+            {
+                *requiresInstMethodTableArg = requiresInstMTArg ? (byte)1 : (byte)0;
+            }
+
+            return result != null ? ObjectToHandle(result) : null;
+        }
 
         private CORINFO_CLASS_STRUCT_* getDefaultEqualityComparerClass(CORINFO_CLASS_STRUCT_* elemType)
         {
@@ -853,7 +880,7 @@ namespace Internal.JitInterface
 
         private bool IsPInvokeStubRequired(MethodDesc method)
         {
-            return ((Internal.IL.Stubs.PInvokeILStubMethodIL)_compilation.GetMethodIL(method)).IsStubRequired;
+            return ((Internal.IL.Stubs.PInvokeILStubMethodIL)_compilation.GetMethodIL(method))?.IsStubRequired ?? false;
         }
 
         private bool pInvokeMarshalingRequired(CORINFO_METHOD_STRUCT_* handle, CORINFO_SIG_INFO* callSiteSig)
@@ -977,6 +1004,16 @@ namespace Internal.JitInterface
             pResolvedToken.hMethod = null;
             pResolvedToken.hField = null;
 
+#if READYTORUN
+            TypeDesc owningType = methodIL.OwningMethod.GetTypicalMethodDefinition().OwningType;
+            EcmaModule tokenContextToRecord = null;
+            if (_compilation.NodeFactory.CompilationModuleGroup.VersionsWithType(owningType) &&
+                owningType is EcmaType owningEcmaType)
+            {
+                tokenContextToRecord = owningEcmaType.EcmaModule;
+            }
+#endif
+
             if (result is MethodDesc)
             {
                 MethodDesc method = result as MethodDesc;
@@ -984,7 +1021,10 @@ namespace Internal.JitInterface
                 pResolvedToken.hClass = ObjectToHandle(method.OwningType);
 
 #if READYTORUN
-            _compilation.NodeFactory.Resolver.AddModuleTokenForMethod(method, new ModuleToken(_tokenContext, (mdToken)pResolvedToken.token));
+            if (tokenContextToRecord != null)
+            {
+                _compilation.NodeFactory.Resolver.AddModuleTokenForMethod(method, new ModuleToken(tokenContextToRecord, (mdToken)pResolvedToken.token));
+            }
 #endif
             }
             else
@@ -1001,14 +1041,20 @@ namespace Internal.JitInterface
                 pResolvedToken.hClass = ObjectToHandle(field.OwningType);
 
 #if READYTORUN
-                _compilation.NodeFactory.Resolver.AddModuleTokenForField(field, new ModuleToken(_tokenContext, (mdToken)pResolvedToken.token));
+                if (tokenContextToRecord != null)
+                {
+                    _compilation.NodeFactory.Resolver.AddModuleTokenForField(field, new ModuleToken(tokenContextToRecord, (mdToken)pResolvedToken.token));
+                }
 #endif
             }
             else
             {
                 TypeDesc type = (TypeDesc)result;
 #if READYTORUN
-                _compilation.NodeFactory.Resolver.AddModuleTokenForType(type, new ModuleToken(_tokenContext, (mdToken)pResolvedToken.token));
+                if (tokenContextToRecord != null)
+                {
+                    _compilation.NodeFactory.Resolver.AddModuleTokenForType(type, new ModuleToken(tokenContextToRecord, (mdToken)pResolvedToken.token));
+                }
 #endif
 
                 if (pResolvedToken.tokenType == CorInfoTokenKind.CORINFO_TOKENKIND_Newarr)
@@ -1805,6 +1851,30 @@ namespace Internal.JitInterface
             return ObjectToHandle(merged);
         }
 
+        private bool isMoreSpecificType(CORINFO_CLASS_STRUCT_* cls1, CORINFO_CLASS_STRUCT_* cls2)
+        {
+            TypeDesc type1 = HandleToObject(cls1);
+            TypeDesc type2 = HandleToObject(cls2);
+
+            // If we have a mixture of shared and unshared types,
+            // consider the unshared type as more specific.
+            bool isType1CanonSubtype = type1.IsCanonicalSubtype(CanonicalFormKind.Any);
+            bool isType2CanonSubtype = type2.IsCanonicalSubtype(CanonicalFormKind.Any);
+            if (isType1CanonSubtype != isType2CanonSubtype)
+            {
+                // Only one of type1 and type2 is shared.
+                // type2 is more specific if type1 is the shared type.
+                return isType1CanonSubtype;
+            }
+
+            // Otherwise both types are either shared or not shared.
+            // Look for a common parent type.
+            TypeDesc merged = TypeExtensions.MergeTypesToCommonParent(type1, type2);
+
+            // If the common parent is type1, then type2 is more specific.
+            return merged == type1;
+        }
+
         private CORINFO_CLASS_STRUCT_* getParentType(CORINFO_CLASS_STRUCT_* cls)
         { throw new NotImplementedException("getParentType"); }
 
@@ -1958,6 +2028,9 @@ namespace Internal.JitInterface
                                         (int)CORINFO_ACCESS_FLAGS.CORINFO_ACCESS_INIT_ARRAY)) != 0);
 
             var field = HandleToObject(pResolvedToken.hField);
+#if READYTORUN
+            MethodDesc callerMethod = HandleToObject(callerHandle);
+#endif
 
             CORINFO_FIELD_ACCESSOR fieldAccessor;
             CORINFO_FIELD_FLAGS fieldFlags = (CORINFO_FIELD_FLAGS)0;
@@ -2093,11 +2166,14 @@ namespace Internal.JitInterface
                     }
 
 #if READYTORUN
-                    if (!_compilation.NodeFactory.CompilationModuleGroup.ContainsType(field.OwningType))
+                    if (!_compilation.NodeFactory.CompilationModuleGroup.ContainsType(field.OwningType) &&
+                        fieldAccessor == CORINFO_FIELD_ACCESSOR.CORINFO_FIELD_STATIC_SHARED_STATIC_HELPER)
                     {
+                        PreventRecursiveFieldInlinesOutsideVersionBubble(field, callerMethod);
+                        
                         // Static fields outside of the version bubble need to be accessed using the ENCODE_FIELD_ADDRESS
                         // helper in accordance with ZapInfo::getFieldInfo in CoreCLR.
-                        pResult->fieldLookup = CreateConstLookupToSymbol(_compilation.SymbolNodeFactory.FieldAddress(field, _signatureContext));
+                        pResult->fieldLookup = CreateConstLookupToSymbol(_compilation.SymbolNodeFactory.FieldAddress(field, GetSignatureContext()));
 
                         pResult->helper = CorInfoHelpFunc.CORINFO_HELP_READYTORUN_STATIC_BASE;
 
@@ -2111,7 +2187,7 @@ namespace Internal.JitInterface
                     {
                         pResult->fieldLookup = CreateConstLookupToSymbol(
 #if READYTORUN
-                            _compilation.SymbolNodeFactory.ReadyToRunHelper(helperId, field.OwningType, _signatureContext)
+                            _compilation.SymbolNodeFactory.ReadyToRunHelper(helperId, field.OwningType, GetSignatureContext())
 #else
                             _compilation.NodeFactory.ReadyToRunHelper(helperId, field.OwningType)
 #endif
@@ -2132,6 +2208,10 @@ namespace Internal.JitInterface
             pResult->fieldType = getFieldType(pResolvedToken.hField, &pResult->structType, pResolvedToken.hClass);
             pResult->accessAllowed = CorInfoIsAccessAllowedResult.CORINFO_ACCESS_ALLOWED;
             pResult->offset = fieldOffset;
+
+#if READYTORUN
+            EncodeFieldBaseOffset(field, pResult, callerMethod);
+#endif
 
             // TODO: We need to implement access checks for fields and methods.  See JitInterface.cpp in mrtjit
             //       and STS::AccessCheck::CanAccess.
@@ -2493,121 +2573,8 @@ namespace Internal.JitInterface
         private CORINFO_CLASS_STRUCT_* embedClassHandle(CORINFO_CLASS_STRUCT_* handle, ref void* ppIndirection)
         { throw new NotImplementedException("embedClassHandle"); }
 
-        private CORINFO_METHOD_STRUCT_* embedMethodHandle(CORINFO_METHOD_STRUCT_* handle, ref void* ppIndirection)
-        {
-            MethodDesc method = HandleToObject(handle);
-            ISymbolNode methodHandleSymbol = _compilation.NodeFactory.RuntimeMethodHandle(method);
-            CORINFO_METHOD_STRUCT_* result = (CORINFO_METHOD_STRUCT_*)ObjectToHandle(methodHandleSymbol);
-
-            if (methodHandleSymbol.RepresentsIndirectionCell)
-            {
-                ppIndirection = result;
-                return null;
-            }
-            else
-            {
-                ppIndirection = null;
-                return result;
-            }
-        }
-
         private CORINFO_FIELD_STRUCT_* embedFieldHandle(CORINFO_FIELD_STRUCT_* handle, ref void* ppIndirection)
         { throw new NotImplementedException("embedFieldHandle"); }
-
-        private void embedGenericHandle(ref CORINFO_RESOLVED_TOKEN pResolvedToken, bool fEmbedParent, ref CORINFO_GENERICHANDLE_RESULT pResult)
-        {
-#if DEBUG
-            // In debug, write some bogus data to the struct to ensure we have filled everything
-            // properly.
-            fixed (CORINFO_GENERICHANDLE_RESULT* tmp = &pResult)
-                MemoryHelper.FillMemory((byte*)tmp, 0xcc, Marshal.SizeOf<CORINFO_GENERICHANDLE_RESULT>());
-#endif
-            ReadyToRunHelperId helperId = ReadyToRunHelperId.Invalid;
-            object target = null;
-
-            if (!fEmbedParent && pResolvedToken.hMethod != null)
-            {
-                MethodDesc md = HandleToObject(pResolvedToken.hMethod);
-                TypeDesc td = HandleToObject(pResolvedToken.hClass);
-
-                pResult.handleType = CorInfoGenericHandleType.CORINFO_HANDLETYPE_METHOD;
-
-                Debug.Assert(md.OwningType == td);
-
-                pResult.compileTimeHandle = (CORINFO_GENERIC_STRUCT_*)ObjectToHandle(md);
-
-                if (pResolvedToken.tokenType == CorInfoTokenKind.CORINFO_TOKENKIND_Ldtoken)
-                    helperId = ReadyToRunHelperId.MethodHandle;
-                else
-                {
-                    Debug.Assert(pResolvedToken.tokenType == CorInfoTokenKind.CORINFO_TOKENKIND_Method);
-                    helperId = ReadyToRunHelperId.MethodDictionary;
-                }
-                
-                target = GetRuntimeDeterminedObjectForToken(ref pResolvedToken);
-            }
-            else if (!fEmbedParent && pResolvedToken.hField != null)
-            {
-                FieldDesc fd = HandleToObject(pResolvedToken.hField);
-                TypeDesc td = HandleToObject(pResolvedToken.hClass);
-
-                pResult.handleType = CorInfoGenericHandleType.CORINFO_HANDLETYPE_FIELD;
-                pResult.compileTimeHandle = (CORINFO_GENERIC_STRUCT_*)pResolvedToken.hField;
-
-                Debug.Assert(pResolvedToken.tokenType == CorInfoTokenKind.CORINFO_TOKENKIND_Ldtoken);
-                helperId = ReadyToRunHelperId.FieldHandle;
-                target = GetRuntimeDeterminedObjectForToken(ref pResolvedToken);
-            }
-            else
-            {
-                TypeDesc td = HandleToObject(pResolvedToken.hClass);
-
-                pResult.handleType = CorInfoGenericHandleType.CORINFO_HANDLETYPE_CLASS;
-                pResult.compileTimeHandle = (CORINFO_GENERIC_STRUCT_*)pResolvedToken.hClass;
-
-                object obj = GetRuntimeDeterminedObjectForToken(ref pResolvedToken);
-                target = obj as TypeDesc;
-                if (target == null)
-                {
-                    Debug.Assert(fEmbedParent);
-
-                    if (obj is MethodDesc objAsMethod)
-                    {
-                        target = objAsMethod.OwningType;
-                    }
-                    else
-                    {
-                        Debug.Assert(obj is FieldDesc);
-                        target = ((FieldDesc)obj).OwningType;
-                    }
-                }
-
-#if READYTORUN
-                helperId = ReadyToRunHelperId.TypeHandle;
-#else
-                if (pResolvedToken.tokenType == CorInfoTokenKind.CORINFO_TOKENKIND_NewObj
-                        || pResolvedToken.tokenType == CorInfoTokenKind.CORINFO_TOKENKIND_Newarr
-                        || pResolvedToken.tokenType == CorInfoTokenKind.CORINFO_TOKENKIND_Box
-                        || pResolvedToken.tokenType == CorInfoTokenKind.CORINFO_TOKENKIND_Constrained
-                        || (pResolvedToken.tokenType == CorInfoTokenKind.CORINFO_TOKENKIND_Ldtoken && ConstructedEETypeNode.CreationAllowed(td)))
-                {
-                    helperId = ReadyToRunHelperId.TypeHandle;
-                }
-                else if (pResolvedToken.tokenType == CorInfoTokenKind.CORINFO_TOKENKIND_Casting)
-                {
-                    helperId = ReadyToRunHelperId.TypeHandleForCasting;
-                }
-                else
-                {
-                    helperId = ReadyToRunHelperId.NecessaryTypeHandle;
-                }
-#endif
-            }
-
-            Debug.Assert(pResult.compileTimeHandle != null);
-
-            ComputeLookup(ref pResolvedToken, target, helperId, ref pResult.lookup);
-        }
 
         private CORINFO_RUNTIME_LOOKUP_KIND GetGenericRuntimeLookupKind(MethodDesc method)
         {

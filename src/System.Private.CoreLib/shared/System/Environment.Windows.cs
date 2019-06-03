@@ -3,10 +3,8 @@
 // See the LICENSE file in the project root for more information.
 
 using System.IO;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using Microsoft.Win32;
 
 namespace System
 {
@@ -86,7 +84,7 @@ namespace System
             Interop.Kernel32.GetComputerName() ??
             throw new InvalidOperationException(SR.InvalidOperation_ComputerName);
 
-        private static readonly unsafe Lazy<OperatingSystem> s_osVersion = new Lazy<OperatingSystem>(() =>
+        private static unsafe OperatingSystem GetOSVersion()
         {
             var version = new Interop.Kernel32.OSVERSIONINFOEX { dwOSVersionInfoSize = sizeof(Interop.Kernel32.OSVERSIONINFOEX) };
             if (!Interop.Kernel32.GetVersionExW(ref version))
@@ -98,7 +96,7 @@ namespace System
                 PlatformID.Win32NT,
                 new Version(version.dwMajorVersion, version.dwMinorVersion, version.dwBuildNumber, (version.wServicePackMajor << 16) | version.wServicePackMinor),
                 Marshal.PtrToStringUni((IntPtr)version.szCSDVersion));
-        });
+        }
 
         public static string SystemDirectory
         {

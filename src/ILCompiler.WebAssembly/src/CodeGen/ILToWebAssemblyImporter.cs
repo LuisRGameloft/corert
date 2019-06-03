@@ -7,7 +7,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-
 using Internal.TypeSystem;
 using ILCompiler;
 using LLVMSharp;
@@ -212,10 +211,10 @@ namespace Internal.IL
                 signatureIndex++;
             }
 
-            string[] argNames = null;
+            IList<string> argNames = null;
             if (_debugInformation != null)
             {
-                argNames = _debugInformation.GetParameterNames()?.ToArray();
+                argNames = GetParameterNamesForMethod(_method);
             }
 
             for (int i = 0; i < _signature.Length; i++)
@@ -338,8 +337,7 @@ namespace Internal.IL
                 }
             }
 
-            MetadataType metadataType = (MetadataType)_thisType;
-            if (!metadataType.IsBeforeFieldInit
+            if (_thisType is MetadataType metadataType &&  !metadataType.IsBeforeFieldInit
                 && (!_method.IsStaticConstructor && _method.Signature.IsStatic || _method.IsConstructor || (_thisType.IsValueType && !_method.Signature.IsStatic)) 
                 && _compilation.TypeSystemContext.HasLazyStaticConstructor(metadataType))
             {
@@ -1631,9 +1629,6 @@ namespace Internal.IL
                 if (!callee.IsNewSlot)
                     throw new NotImplementedException();
 
-                if (!_compilation.HasFixedSlotVTable(callee.OwningType))
-                    AddVirtualMethodReference(callee);
-
                 bool isValueTypeCall = false;
                 TypeDesc thisType = thisPointer.Type;
                 TypeFlags category = thisType.Category;
@@ -1681,6 +1676,7 @@ namespace Internal.IL
             }
             else
             {
+                AddMethodReference(callee);
                 return GetOrCreateLLVMFunction(calleeName, callee.Signature);
             }
         }
@@ -1957,16 +1953,6 @@ namespace Internal.IL
 
         private ExpressionEntry HandleCall(MethodDesc callee, MethodSignature signature, StackEntry[] argumentValues, ILOpcode opcode = ILOpcode.call, TypeDesc constrainedType = null, LLVMValueRef calliTarget = default(LLVMValueRef), TypeDesc forcedReturnType = null)
         {
-            if (opcode == ILOpcode.callvirt && callee.IsVirtual)
-            {
-                AddVirtualMethodReference(callee);
-            }
-            else if (callee != null)
-            {
-                AddMethodReference(callee);
-            }
-            var pointerSize = _compilation.NodeFactory.Target.PointerSize;
-
             LLVMValueRef fn;
             if (opcode == ILOpcode.calli)
             {
@@ -2073,15 +2059,6 @@ namespace Internal.IL
             ILOpcode opcode, TypeDesc constrainedType, LLVMValueRef calliTarget, int offset, LLVMValueRef baseShadowStack, LLVMBuilderRef builder, bool needsReturnSlot,
             LLVMValueRef castReturnAddress)
         {
-            if (opcode == ILOpcode.callvirt && callee.IsVirtual)
-            {
-                AddVirtualMethodReference(callee);
-            }
-            else if (callee != null)
-            {
-                AddMethodReference(callee);
-            }
-
             LLVMValueRef fn;
             if (opcode == ILOpcode.calli)
             {
@@ -2155,10 +2132,6 @@ namespace Internal.IL
             _dependencies.Add(_compilation.NodeFactory.MethodEntrypoint(method));
         }
 
-        private void AddVirtualMethodReference(MethodDesc method)
-        {
-            _dependencies.Add(_compilation.NodeFactory.VirtualMethodUse(method));
-        }
         static Dictionary<string, MethodDesc> _pinvokeMap = new Dictionary<string, MethodDesc>();
         private void ImportRawPInvoke(MethodDesc method)
         {
@@ -2428,7 +2401,6 @@ namespace Internal.IL
                 if (method.IsVirtual)
                 {
                     targetLLVMFunction = LLVMFunctionForMethod(method, thisPointer, true, null);
-                    AddVirtualMethodReference(method);
                 }
                 else
                 {
@@ -2581,6 +2553,14 @@ namespace Internal.IL
                     }
                     else
                     {
+                        if (op1.Type.IsWellKnownType(WellKnownType.Double) && op2.Type.IsWellKnownType(WellKnownType.Single))
+                        {
+                            left = LLVM.BuildFPExt(_builder, left, LLVM.DoubleType(), "fpextop2");
+                        }
+                        else if (op2.Type.IsWellKnownType(WellKnownType.Double) && op1.Type.IsWellKnownType(WellKnownType.Single))
+                        {
+                            right = LLVM.BuildFPExt(_builder, right, LLVM.DoubleType(), "fpextop1");
+                        }
                         switch (opcode)
                         {
                             case ILOpcode.beq:
@@ -2718,6 +2698,14 @@ namespace Internal.IL
             LLVMValueRef right = op1.ValueForStackKind(kind, _builder, false);
             if (kind == StackValueKind.Float)
             {
+                if(op1.Type.IsWellKnownType(WellKnownType.Double) && op2.Type.IsWellKnownType(WellKnownType.Single))
+                {
+                    left = LLVM.BuildFPExt(_builder, left, LLVM.DoubleType(), "fpextop2");
+                }
+                else if (op2.Type.IsWellKnownType(WellKnownType.Double) && op1.Type.IsWellKnownType(WellKnownType.Single))
+                {
+                    right = LLVM.BuildFPExt(_builder, right, LLVM.DoubleType(), "fpextop1");
+                }
                 switch (opcode)
                 {
                     case ILOpcode.add:
@@ -2756,6 +2744,8 @@ namespace Internal.IL
             }
             else
             {
+                // these ops return an int32 for these.
+                type = WidenBytesAndShorts(type);
                 switch (opcode)
                 {
                     case ILOpcode.add:
@@ -2817,6 +2807,20 @@ namespace Internal.IL
             PushExpression(kind, "binop", result, type);
         }
 
+        private TypeDesc WidenBytesAndShorts(TypeDesc type)
+        {
+            switch (type.Category)
+            {
+                case TypeFlags.Byte:
+                case TypeFlags.SByte:
+                case TypeFlags.Int16:
+                case TypeFlags.UInt16:
+                    return GetWellKnownType(WellKnownType.Int32);
+                default:
+                    return type;
+            }
+        }
+
         private void ImportShiftOperation(ILOpcode opcode)
         {
             LLVMValueRef result;
@@ -2850,7 +2854,7 @@ namespace Internal.IL
                     throw new InvalidOperationException(); // Should be unreachable
             }
 
-            PushExpression(valueToShift.Kind, "shiftop", result, valueToShift.Type);
+            PushExpression(valueToShift.Kind, "shiftop", result, WidenBytesAndShorts(valueToShift.Type));
         }
 
         bool TypeNeedsSignExtension(TypeDesc targetType)
@@ -2920,6 +2924,14 @@ namespace Internal.IL
             }
             else
             {
+                if (op1.Type.IsWellKnownType(WellKnownType.Double) && op2.Type.IsWellKnownType(WellKnownType.Single))
+                {
+                    typeSaneOp2 = LLVM.BuildFPExt(_builder, typeSaneOp2, LLVM.DoubleType(), "fpextop2");
+                }
+                else if (op2.Type.IsWellKnownType(WellKnownType.Double) && op1.Type.IsWellKnownType(WellKnownType.Single))
+                {
+                    typeSaneOp1 = LLVM.BuildFPExt(_builder, typeSaneOp1, LLVM.DoubleType(), "fpextop1");
+                }
                 switch (opcode)
                 {
                     case ILOpcode.ceq:
@@ -3429,7 +3441,7 @@ namespace Internal.IL
                 LLVM.BuildStore(_builder, LLVM.ConstInt(llvmType, 0, LLVMMisc.False), valueEntry.ValueAsType(LLVM.PointerType(llvmType, 0), _builder));
             else if (llvmType.TypeKind == LLVMTypeKind.LLVMPointerTypeKind)
                 LLVM.BuildStore(_builder, LLVM.ConstNull(llvmType), valueEntry.ValueAsType(LLVM.PointerType(llvmType, 0), _builder));
-            else if (llvmType.TypeKind == LLVMTypeKind.LLVMFloatTypeKind)
+            else if (llvmType.TypeKind == LLVMTypeKind.LLVMFloatTypeKind || llvmType.TypeKind == LLVMTypeKind.LLVMDoubleTypeKind)
                 LLVM.BuildStore(_builder, LLVM.ConstReal(llvmType, 0.0), valueEntry.ValueAsType(LLVM.PointerType(llvmType, 0), _builder));
             else
                 throw new NotImplementedException();

@@ -1,17 +1,17 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
-  <!--
-    Microsoft ResX Schema
-
+  <!-- 
+    Microsoft ResX Schema 
+    
     Version 2.0
-
-    The primary goals of this format is to allow a simple XML format
-    that is mostly human readable. The generation and parsing of the
-    various data types are done through the TypeConverter classes
+    
+    The primary goals of this format is to allow a simple XML format 
+    that is mostly human readable. The generation and parsing of the 
+    various data types are done through the TypeConverter classes 
     associated with the data types.
-
+    
     Example:
-
+    
     ... ado.net/XML headers & schema ...
     <resheader name="resmimetype">text/microsoft-resx</resheader>
     <resheader name="version">2.0</resheader>
@@ -26,36 +26,36 @@
         <value>[base64 mime encoded string representing a byte array form of the .NET Framework object]</value>
         <comment>This is a comment</comment>
     </data>
-
-    There are any number of "resheader" rows that contain simple
+                
+    There are any number of "resheader" rows that contain simple 
     name/value pairs.
-
-    Each data row contains a name, and value. The row also contains a
-    type or mimetype. Type corresponds to a .NET class that support
-    text/value conversion through the TypeConverter architecture.
-    Classes that don't support this are serialized and stored with the
+    
+    Each data row contains a name, and value. The row also contains a 
+    type or mimetype. Type corresponds to a .NET class that support 
+    text/value conversion through the TypeConverter architecture. 
+    Classes that don't support this are serialized and stored with the 
     mimetype set.
-
-    The mimetype is used for serialized objects, and tells the
-    ResXResourceReader how to depersist the object. This is currently not
+    
+    The mimetype is used for serialized objects, and tells the 
+    ResXResourceReader how to depersist the object. This is currently not 
     extensible. For a given mimetype the value must be set accordingly:
-
-    Note - application/x-microsoft.net.object.binary.base64 is the format
-    that the ResXResourceWriter will generate, however the reader can
+    
+    Note - application/x-microsoft.net.object.binary.base64 is the format 
+    that the ResXResourceWriter will generate, however the reader can 
     read any of the formats listed below.
-
+    
     mimetype: application/x-microsoft.net.object.binary.base64
-    value   : The object must be serialized with
+    value   : The object must be serialized with 
             : System.Runtime.Serialization.Formatters.Binary.BinaryFormatter
             : and then encoded with base64 encoding.
-
+    
     mimetype: application/x-microsoft.net.object.soap.base64
-    value   : The object must be serialized with
+    value   : The object must be serialized with 
             : System.Runtime.Serialization.Formatters.Soap.SoapFormatter
             : and then encoded with base64 encoding.
 
     mimetype: application/x-microsoft.net.object.bytearray.base64
-    value   : The object must be serialized into a byte array
+    value   : The object must be serialized into a byte array 
             : using a System.ComponentModel.TypeConverter
             : and then encoded with base64 encoding.
     -->
@@ -117,6 +117,15 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+  <data name="AppDomain_Name" xml:space="preserve">
+    <value>Name:</value>
+  </data>
+  <data name="AppDomain_NoContextPolicies" xml:space="preserve">
+    <value>There are no context policies.</value>
+  </data>
+  <data name="AppDomain_Policy_PrincipalTwice" xml:space="preserve">
+    <value>Default principal object cannot be set twice.</value>
+  </data>
   <data name="AmbiguousImplementationException_NullMessage" xml:space="preserve">
     <value>Ambiguous implementation found.</value>
   </data>
@@ -161,6 +170,9 @@
   </data>
   <data name="Arg_CannotMixComparisonInfrastructure" xml:space="preserve">
     <value>The usage of IKeyComparer and IHashCodeProvider/IComparer interfaces cannot be mixed; use one or the other.</value>
+  </data>
+  <data name="Arg_CannotUnloadAppDomainException" xml:space="preserve">
+    <value>Attempt to unload the AppDomain failed.</value>
   </data>
   <data name="Arg_CopyNonBlittableArray" xml:space="preserve">
     <value>Arrays must contain only blittable data in order to be copied to unmanaged memory.</value>
@@ -209,6 +221,9 @@
   </data>
   <data name="Arg_EntryPointNotFoundExceptionParameterized" xml:space="preserve">
     <value>Unable to find an entry point named '{0}' in DLL '{1}'.</value>
+  </data>
+  <data name="Arg_EntryPointNotFoundExceptionParameterizedNoLibrary" xml:space="preserve">
+    <value>Unable to find an entry point named '{0}' in DLL.</value>
   </data>
   <data name="Arg_EnumIllegalVal" xml:space="preserve">
     <value>Illegal enum value: {0}.</value>
@@ -350,6 +365,9 @@
   </data>
   <data name="Arg_MustBeTimeSpan" xml:space="preserve">
     <value>Object must be of type TimeSpan.</value>
+  </data>
+  <data name="Arg_MustBeTrue" xml:space="preserve">
+    <value>Argument must be true.</value>
   </data>
   <data name="Arg_MustBeUInt16" xml:space="preserve">
     <value>Object must be of type UInt16.</value>
@@ -507,6 +525,9 @@
   <data name="Argument_AdjustmentRulesOutOfOrder" xml:space="preserve">
     <value>The elements of the AdjustmentRule array must be in chronological order and must not overlap.</value>
   </data>
+  <data name="Argument_AttributeNamesMustBeUnique" xml:space="preserve">
+    <value>Attribute names must be unique.</value>
+  </data>
   <data name="Argument_BadFormatSpecifier" xml:space="preserve">
     <value>Format specifier was invalid.</value>
   </data>
@@ -635,6 +656,18 @@
   </data>
   <data name="Argument_InvalidDigitSubstitution" xml:space="preserve">
     <value>The DigitSubstitution property must be of a valid member of the DigitShapes enumeration. Valid entries include Context, NativeNational or None.</value>
+  </data>
+  <data name="Argument_InvalidElementName" xml:space="preserve">
+    <value>Invalid element name '{0}'.</value>
+  </data>
+  <data name="Argument_InvalidElementTag" xml:space="preserve">
+    <value>Invalid element tag '{0}'.</value>
+  </data>
+  <data name="Argument_InvalidElementText" xml:space="preserve">
+    <value>Invalid element text '{0}'.</value>
+  </data>
+  <data name="Argument_InvalidElementValue" xml:space="preserve">
+    <value>Invalid element value '{0}'.</value>
   </data>
   <data name="Argument_InvalidEnumValue" xml:space="preserve">
     <value>The value '{0}' is not valid for this usage of the type {1}.</value>
@@ -819,8 +852,14 @@
   <data name="ArgumentNull_ArrayValue" xml:space="preserve">
     <value>Found a null value within an array.</value>
   </data>
+  <data name="ArgumentNull_Child" xml:space="preserve">
+    <value>Cannot have a null child.</value>
+  </data>
+  <data name="ArgumentNull_Collection" xml:space="preserve">
+    <value>Collection cannot be null.</value>
+  </data>
   <data name="ArgumentNull_Dictionary" xml:space="preserve">
-   <value>Dictionary cannot be null.</value>
+    <value>Dictionary cannot be null.</value>
   </data>
   <data name="ArgumentNull_Generic" xml:space="preserve">
     <value>Value cannot be null.</value>
@@ -1038,8 +1077,14 @@
   <data name="BadImageFormatException_CouldNotLoadFileOrAssembly" xml:space="preserve">
     <value>Could not load file or assembly '{0}'. An attempt was made to load a program with an incorrect format.</value>
   </data>
+  <data name="InvalidOperation_CannotRegisterSecondResolver" xml:space="preserve">
+    <value>A resolver is already set for the assembly.</value>
+  </data>
   <data name="InvalidOperation_CollectionCorrupted" xml:space="preserve">
     <value>A prior operation on this collection was interrupted by an exception. Collection's state is no longer trusted.</value>
+  </data>
+  <data name="InvalidOperation_UnderlyingArrayListChanged" xml:space="preserve">
+    <value>This range in the underlying list is invalid. A possible cause is that elements were removed.</value>
   </data>
   <data name="Exception_EndOfInnerExceptionStack" xml:space="preserve">
     <value>--- End of inner exception stack trace ---</value>
@@ -1335,6 +1380,9 @@
   <data name="NotSupported_ReadOnlyCollection" xml:space="preserve">
     <value>Collection is read-only.</value>
   </data>
+  <data name="NotSupported_RangeCollection" xml:space="preserve">
+    <value>The specified operation is not supported on Ranges.</value>
+  </data>
   <data name="NotSupported_StringComparison" xml:space="preserve">
     <value>The string comparison type passed in is currently not supported.</value>
   </data>
@@ -1350,11 +1398,17 @@
   <data name="NotSupported_WaitAllSTAThread" xml:space="preserve">
     <value>WaitAll for multiple handles on a STA thread is not supported.</value>
   </data>
+  <data name="NotSupported_Overlapped" xml:space="preserve">
+    <value>Overlapped I/O is not supported.</value>
+  </data>
   <data name="ObjectDisposed_Generic" xml:space="preserve">
     <value>Cannot access a disposed object.</value>
   </data>
   <data name="ObjectDisposed_ObjectName_Name" xml:space="preserve">
     <value>Object name: '{0}'.</value>
+  </data>
+  <data name="ObjectDisposed_SafeHandleClosed" xml:space="preserve">
+    <value>Safe handle has been closed.</value>
   </data>
   <data name="Overflow_Byte" xml:space="preserve">
     <value>Value was either too large or too small for an unsigned byte.</value>
@@ -1445,6 +1499,9 @@
   </data>
   <data name="Threading_WaitHandleCannotBeOpenedException_InvalidHandle" xml:space="preserve">
     <value>A WaitHandle with system-wide name '{0}' cannot be created. A WaitHandle of a different type might have the same name.</value>
+  </data>
+  <data name="Threading_WaitHandleTooManyPosts" xml:space="preserve">
+    <value>The WaitHandle cannot be signaled because it would exceed its maximum count.</value>
   </data>
   <data name="TimeZoneNotFound_MissingData" xml:space="preserve">
     <value>The time zone ID '{0}' was not found on the local computer.</value>
@@ -1831,8 +1888,8 @@
   <data name="InvalidOperation_TimeoutsNotSupported" xml:space="preserve">
     <value>Timeouts are not supported on this stream.</value>
   </data>
-  <data name="InvalidOperation_TimerAlreadyClosed" xml:space="preserve"> 
-    <value>The Timer was already closed using an incompatible Dispose method.</value> 
+  <data name="InvalidOperation_TimerAlreadyClosed" xml:space="preserve">
+    <value>The Timer was already closed using an incompatible Dispose method.</value>
   </data>
   <data name="NotSupported_UnreadableStream" xml:space="preserve">
     <value>Stream does not support reading.</value>
@@ -1909,6 +1966,9 @@
   <data name="InvalidOperation_NotSupportedOnWinRTEvent" xml:space="preserve">
     <value>Adding or removing event handlers dynamically is not supported on WinRT events.</value>
   </data>
+  <data name="PlatformNotSupported_ComInterop" xml:space="preserve">
+    <value>COM Interop is not supported on this platform.</value>
+  </data>
   <data name="PlatformNotSupported_ReflectionOnly" xml:space="preserve">
     <value>ReflectionOnly loading is not supported on this platform.</value>
   </data>
@@ -1917,6 +1977,24 @@
   </data>
   <data name="PlatformNotSupported_ReflectionEmit" xml:space="preserve">
     <value>Dynamic code generation is not supported on this platform.</value>
+  </data>
+  <data name="PlatformNotSupported_AppDomains" xml:space="preserve">
+    <value>Secondary AppDomains are not supported on this platform.</value>
+  </data>
+  <data name="PlatformNotSupported_CAS" xml:space="preserve">
+    <value>Code Access Security is not supported on this platform.</value>
+  </data>
+  <data name="PlatformNotSupported_AppDomain_ResMon" xml:space="preserve">
+    <value>AppDomain resource monitoring is not supported on this platform.</value>
+  </data>
+  <data name="PlatformNotSupported_Principal" xml:space="preserve">
+    <value>Windows Principal functionality is not supported on this platform.</value>
+  </data>
+  <data name="PlatformNotSupported_ThreadAbort" xml:space="preserve">
+    <value>Thread abort is not supported on this platform.</value>
+  </data>
+  <data name="PlatformNotSupported_ThreadSuspend" xml:space="preserve">
+    <value>Thread suspend is not supported on this platform.</value>
   </data>
   <data name="MissingMember_Name" xml:space="preserve">
     <value>Member '{0}' not found.</value>
@@ -2276,7 +2354,7 @@
     <value>A case-insensitive lookup for resource file "{0}" in assembly "{1}" found multiple entries. Remove the duplicates or specify the exact case.</value>
   </data>
   <data name="MissingManifestResource_NoNeutralAsm" xml:space="preserve">
-    <value>Could not find any resources appropriate for the specified culture or the neutral culture.  Make sure "{0}" was correctly embedded or linked into assembly "{1}" at compile time, or that all the satellite assemblies required are loadable and fully signed.</value>
+    <value>Could not find the resource "{0}" among the resources {2} embedded in the assembly "{1}", nor among the resources in any satellite assemblies for the specified culture. Perhaps the resources were embedded with an incorrect name.</value>
   </data>
   <data name="MissingManifestResource_NoNeutralDisk" xml:space="preserve">
     <value>Could not find any resources appropriate for the specified culture (or the neutral culture) on disk.</value>
@@ -2821,6 +2899,12 @@
   <data name="InvalidOperation_ConcurrentOperationsNotSupported" xml:space="preserve">
     <value>Operations that change non-concurrent collections must have exclusive access. A concurrent update was performed on this collection and corrupted its state. The collection's state is no longer correct.</value>
   </data>
+  <data name="Thread_ApartmentState_ChangeFailed" xml:space="preserve">
+    <value>Failed to set the specified COM apartment state.</value>
+  </data>
+  <data name="Thread_GetSetCompressedStack_NotSupported" xml:space="preserve">
+    <value>Use CompressedStack.(Capture/Run) instead.</value>
+  </data>
   <data name="Thread_Operation_RequiresCurrentThread" xml:space="preserve">
     <value>This operation must be performed on the same thread as that represented by the Thread instance.</value>
   </data>
@@ -2859,5 +2943,17 @@
   </data>
   <data name="Argument_PrecisionTooLarge" xml:space="preserve">
     <value>Precision cannot be larger than {0}.</value>
+  </data>
+  <data name="Serialization_DangerousDeserialization" xml:space="preserve">
+    <value>An action was attempted during deserialization that could lead to a security vulnerability. The action has been aborted.</value>
+  </data>
+  <data name="Serialization_DangerousDeserialization_Switch" xml:space="preserve">
+    <value>An action was attempted during deserialization that could lead to a security vulnerability. The action has been aborted. To allow the action, set the '{0}' AppContext switch to true.</value>
+  </data>
+  <data name="NotSupported_AssemblyLoadFromHash" xml:space="preserve">
+    <value>Assembly.LoadFrom with hashValue is not supported.</value>
+  </data>
+  <data name="BadImageFormat_BadILFormat" xml:space="preserve">
+    <value>Bad IL format.</value>
   </data>
 </root>

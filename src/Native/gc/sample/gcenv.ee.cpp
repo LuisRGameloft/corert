@@ -11,9 +11,9 @@
 
 MethodTable * g_pFreeObjectMethodTable;
 
-int32_t g_TrapReturningThreads;
-
 EEConfig * g_pConfig;
+
+gc_alloc_context g_global_alloc_context;
 
 bool CLREventStatic::CreateManualEventNoThrow(bool bInitialState)
 {
@@ -86,18 +86,14 @@ uint32_t CLREventStatic::Wait(uint32_t dwMilliseconds, bool bAlertable)
 
         if (NULL != pCurThread)
         {
-            if (GCToEEInterface::IsPreemptiveGCDisabled(pCurThread))
-            {
-                GCToEEInterface::EnablePreemptiveGC(pCurThread);
-                disablePreemptive = true;
-            }
+            disablePreemptive = GCToEEInterface::EnablePreemptiveGC();
         }
 
         result = WaitForSingleObjectEx(m_hEvent, dwMilliseconds, bAlertable);
 
         if (disablePreemptive)
         {
-            GCToEEInterface::DisablePreemptiveGC(pCurThread);
+            GCToEEInterface::DisablePreemptiveGC();
         }
     }
 
@@ -135,7 +131,7 @@ void ThreadStore::AttachCurrentThread()
 
 void GCToEEInterface::SuspendEE(SUSPEND_REASON reason)
 {
-    g_theGCHeap->SetGCInProgress(TRUE);
+    g_theGCHeap->SetGCInProgress(true);
 
     // TODO: Implement
 }
@@ -144,7 +140,7 @@ void GCToEEInterface::RestartEE(bool bFinishedGC)
 {
     // TODO: Implement
 
-    g_theGCHeap->SetGCInProgress(FALSE);
+    g_theGCHeap->SetGCInProgress(false);
 }
 
 void GCToEEInterface::GcScanRoots(promote_func* fn,  int condemned, int max_gen, ScanContext* sc)
@@ -173,29 +169,44 @@ bool GCToEEInterface::RefCountedHandleCallbacks(Object * pObject)
     return false;
 }
 
-bool GCToEEInterface::IsPreemptiveGCDisabled(Thread * pThread)
+bool GCToEEInterface::IsPreemptiveGCDisabled()
 {
+    Thread* pThread = ::GetThread();
     return pThread->PreemptiveGCDisabled();
 }
 
-void GCToEEInterface::EnablePreemptiveGC(Thread * pThread)
+bool GCToEEInterface::EnablePreemptiveGC()
 {
-    return pThread->EnablePreemptiveGC();
+    bool bToggleGC = false;
+    Thread* pThread = ::GetThread();
+
+    if (pThread)
+    {
+        bToggleGC = !!pThread->PreemptiveGCDisabled();
+        if (bToggleGC)
+        {
+            pThread->EnablePreemptiveGC();
+        }
+    }
+
+    return bToggleGC;
 }
 
-void GCToEEInterface::DisablePreemptiveGC(Thread * pThread)
+void GCToEEInterface::DisablePreemptiveGC()
 {
+    Thread* pThread = ::GetThread();
     pThread->DisablePreemptiveGC();
 }
 
-gc_alloc_context * GCToEEInterface::GetAllocContext(Thread * pThread)
+Thread* GCToEEInterface::GetThread()
 {
-    return pThread->GetAllocContext();
+    return ::GetThread();
 }
 
-bool GCToEEInterface::CatchAtSafePoint(Thread * pThread)
+gc_alloc_context * GCToEEInterface::GetAllocContext()
 {
-    return pThread->CatchAtSafePoint();
+    Thread* pThread = ::GetThread();
+    return pThread->GetAllocContext();
 }
 
 void GCToEEInterface::GcEnumAllocContexts (enum_alloc_context_func* fn, void* param)
@@ -205,6 +216,11 @@ void GCToEEInterface::GcEnumAllocContexts (enum_alloc_context_func* fn, void* pa
     {
         fn(pThread->GetAllocContext(), param);
     }
+}
+
+uint8_t* GCToEEInterface::GetLoaderAllocatorObjectForGC(Object* pObject)
+{
+    return NULL;
 }
 
 void GCToEEInterface::SyncBlockCacheWeakPtrScan(HANDLESCANPROC /*scanProc*/, uintptr_t /*lp1*/, uintptr_t /*lp2*/)
@@ -217,12 +233,6 @@ void GCToEEInterface::SyncBlockCacheDemote(int /*max_gen*/)
 
 void GCToEEInterface::SyncBlockCachePromotionsGranted(int /*max_gen*/)
 {
-}
-
-Thread* GCToEEInterface::CreateBackgroundThread(GCBackgroundThreadFunction threadStart, void* arg)
-{
-    // TODO: Implement for background GC
-    return NULL;
 }
 
 void GCToEEInterface::DiagGCStart(int gen, bool isInduced)
@@ -263,59 +273,71 @@ void GCToEEInterface::EnableFinalization(bool foundFinalizers)
     // TODO: Implement for finalization
 }
 
-bool IsGCSpecialThread()
+void GCToEEInterface::HandleFatalError(unsigned int exitCode)
 {
-    // TODO: Implement for background GC
+    abort();
+}
+
+bool GCToEEInterface::ShouldFinalizeObjectForUnload(AppDomain* pDomain, Object* obj)
+{
+    return true;
+}
+
+bool GCToEEInterface::ForceFullGCToBeBlocking()
+{
     return false;
 }
 
-bool IsGCThread()
+bool GCToEEInterface::EagerFinalized(Object* obj)
+{
+    // The sample does not finalize anything eagerly.
+    return false;
+}
+
+bool GCToEEInterface::GetBooleanConfigValue(const char* key, bool* value)
 {
     return false;
 }
 
-void SwitchToWriteWatchBarrier()
+bool GCToEEInterface::GetIntConfigValue(const char* key, int64_t* value)
+{
+    return false;
+}
+
+bool GCToEEInterface::GetStringConfigValue(const char* key, const char** value)
+{
+    return false;
+}
+
+void GCToEEInterface::FreeStringConfigValue(const char *value)
+{
+
+}
+
+bool GCToEEInterface::IsGCThread()
+{
+    return false;
+}
+
+bool GCToEEInterface::WasCurrentThreadCreatedByGC()
+{
+    return false;
+}
+
+MethodTable* GCToEEInterface::GetFreeObjectMethodTable()
+{
+    return g_pFreeObjectMethodTable;
+}
+
+bool GCToEEInterface::CreateThread(void (*threadStart)(void*), void* arg, bool is_suspendable, const char* name)
+{
+    return false;
+}
+
+void GCToEEInterface::WalkAsyncPinnedForPromotion(Object* object, ScanContext* sc, promote_func* callback)
 {
 }
 
-void SwitchToNonWriteWatchBarrier()
+void GCToEEInterface::WalkAsyncPinned(Object* object, void* context, void (*callback)(Object*, Object*, void*))
 {
-}
-
-void LogSpewAlways(const char * /*fmt*/, ...)
-{
-}
-
-uint32_t CLRConfig::GetConfigValue(ConfigDWORDInfo eType)
-{
-    switch (eType)
-    {
-    case UNSUPPORTED_BGCSpinCount:
-        return 140;
-
-    case UNSUPPORTED_BGCSpin:
-        return 2;
-
-    case UNSUPPORTED_GCLogEnabled:
-    case UNSUPPORTED_GCLogFile:
-    case UNSUPPORTED_GCLogFileSize:
-    case EXTERNAL_GCStressStart:
-    case INTERNAL_GCStressStartAtJit:
-    case INTERNAL_DbgDACSkipVerifyDlls:
-        return 0;
-
-    case Config_COUNT:
-    default:
-#ifdef _MSC_VER
-#pragma warning(suppress:4127) // Constant conditional expression in ASSERT below
-#endif
-        ASSERT(!"Unknown config value type");
-        return 0;
-    }
-}
-
-HRESULT CLRConfig::GetConfigValue(ConfigStringInfo /*eType*/, TCHAR * * outVal)
-{
-    *outVal = NULL;
-    return 0;
 }
